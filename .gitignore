@@ -1,0 +1,13 @@
+parsed
+.vscode
+__pycache__
+*.pyc
+.DS_Store
+.env
+.ipynb_checkpoints
+*.stats
+*.log
+test.py
+*.ipynb
+*.csv
+*.dat
