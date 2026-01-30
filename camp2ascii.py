@@ -834,6 +834,7 @@ def execute_cfg(cfg: Config, module=False) -> int:
 
 
     total_status = 0
+    pbar = None
     if cfg.pbar:
         try:
             import tqdm
