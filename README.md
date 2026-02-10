@@ -39,3 +39,5 @@ data.plot(y="sonic_temp", style='o')
 
 plt.show()
 ```
+
+Note that much of this port was done with the help of AI coding tools, and is currently in alpha. I have yet to implement rigorous testing or to fully clean up the AI-generated code.
