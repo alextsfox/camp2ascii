@@ -48,23 +48,12 @@ UINT2_NAN = 65535  # NAN for UINT2 on all loggers
 TRUNC_FACTOR = 1.00001
 TM_Y0 = 1900  # Campbell epoch year
 
-
-
 class FrameType(Enum):
     TOB1 = auto()
     TOB2 = auto()
     TOB3 = auto()
 
-
 class NumericType(Enum):
-    # IEEE4 = auto()
-    # IEEE8 = auto()
-    # FP2 = auto()
-    # ULONG = auto()
-    # LONG = auto()
-    # SecNano = auto()
-    # BOOL = auto()
-    # ASCII = auto()
     NONE = auto()
     IEEE4 = auto()
     IEEE4B = auto()
@@ -821,10 +810,7 @@ def main(argv: Sequence[str]) -> int:
     return execute_cfg(cfg)
 
 def execute_cfg(cfg: Config, module=False) -> int:
-    # _install_signal_handlers()
-
-    # completed_files = []
-
+    """main execution function separate from the CLI/Python API entry point"""
     # Resolve inputs (supports single file, directory, or glob pattern)
     if len(cfg.input_files) == 0:
         if not module:

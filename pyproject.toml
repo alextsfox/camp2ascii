@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "camp2ascii"
+version = "0.1.0"
+description = "Convert Campbell Scientific TOB1/TOB2/TOB3 files to ASCII (TOA5)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+  { name = "Alexander Fox" }
+]
+keywords = ["campbell", "tob", "toa5", "logger", "cardconvert", "csci", "tob1", "tob2", "tob3", "card convert"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[project.optional-dependencies]
+progress = ["tqdm>=4.0"]
+
+[project.urls]
+Repository = "https://github.com/alextsfox/camp2ascii"
+
+[project.scripts]
+camp2ascii = "camp2ascii:main"
+
+[tool.setuptools]
+py-modules = ["camp2ascii"]
+include-package-data = true

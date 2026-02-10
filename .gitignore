@@ -11,3 +11,8 @@ test.py
 *.ipynb
 *.csv
 *.dat
+publish.txt
+.venv
+dist/
+build/
+*.egg-info/

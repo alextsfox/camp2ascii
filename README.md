@@ -4,9 +4,14 @@ This is a Python port of the same tool, originally written in C by Mathias Bavay
 
 camp2ascii can be used as a command line tool or as a python module.
 
-Example usage as a commant line tool:
+Example usage as a command line tool:
 ```bash
 python camp2ascii.py ./64293_20Hz*.dat -o ./ascii_files -pbar
+```
+
+or, after installing with `pip`:
+```bash
+camp2ascii.py ./64293_20Hz*.dat -o ./ascii_files -pbar
 ```
 
 Will attempt to convert all files matching the glob string `./64293_Metdata*.dat` from TOB (binary) format to TOA5 (ASCII) format, outputting the resulting files to the `./ascii_files` directory. A progress bar will be displayed.
