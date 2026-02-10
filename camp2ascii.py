@@ -804,7 +804,9 @@ def read_data(config: Config, frame: FrameDefinition, fp: BinaryIO, writer: Outp
 
 # Entry point
 
-def main(argv: Sequence[str]) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
     cfg = parse_args(argv)
 
     return execute_cfg(cfg)
