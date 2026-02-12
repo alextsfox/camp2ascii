@@ -123,14 +123,14 @@ class Header:
 @dataclass
 class FrameDefinition:
     frame_type: FrameType           # TOB1/TOB2/TOB3 discriminator
-    notsp_res: float                # sampling resolution within a frame (seconds)
-    size: int                       # total frame size in bytes
-    intended_size: int              # intended max frame size from program
+    non_timestamped_record_interval: float  # sampling resolution within a frame (seconds)
+    dataframe_size: int             # total frame size in bytes
+    intended_table_nlines: int        # intended size of the data table
     val_stamp: int                  # validation stamp expected in footer
     comp_val_stamp: int             # complement of validation stamp
-    subframe_res: float             # timestamp resolution within frame header
-    t0: int                         # file creation time (Unix epoch seconds)
-    ringrecord: int                 # last record at ring event (TOB3)
+    frame_time_res: float           # timestamp resolution (accuracy) within frame header
+    file_creation_time: int         # file creation time (Unix epoch seconds)
+    ringrecord: int                 # the record number where the table was last wrapped in ring-memory mode. If >0, then the file data may be out of chronological order.
     tremoval: int                   # last card removal time (TOB3, epoch seconds)
     header_size: int                # header size in bytes for each frame
     footer_size: int                # footer size in bytes for each frame
@@ -138,11 +138,17 @@ class FrameDefinition:
     data_types: List[NumericType]   # decoded field types (1-based index)
     field_options: List[int]        # per-field options (e.g., ASCII length)
     data_length: int                # total bytes of one data record
-    nb_data_lines: int              # number of records per frame
+    nb_data_lines_major: int        # number of records per major frame
     data_line_padding: int          # padding bytes after each record
     fp2_nan: int                    # FP2 NaN threshold for this logger
     fp4_nan: int                    # FP4 NaN threshold for this logger
     uint2_nan: int                  # UINT2 NaN threshold for this logger
+    footer_offset: int = 0          # TOB3: >0 indicates the length of the minor frame. TOB2: the number of major frames without an associated minor frame.
+    file_mark: int = 0              # all records in frame occured before the filemark
+    ring_mark: int = 0              # TOB3: card removed after this frame
+    empty_frame: int = 0            # frame contains no record
+    minor_frame: int = 0            # is a minor (incomplete) frame
+    footer_validation: int = 0      # footer validation value
 
 
 class OutputWriter:
@@ -318,7 +324,7 @@ def _parse_float_prefix(value: str) -> float:
         return 0.0
 
 
-def _parse_notsp_res(raw: str) -> float:
+def _parse_non_timestamped_record_interval(raw: str) -> float:
     multiplier = 0.0
     val = _parse_float_prefix(raw)
     if "HOUR" in raw.upper():
@@ -338,7 +344,7 @@ def _parse_notsp_res(raw: str) -> float:
     return val * multiplier
 
 
-def _parse_subframe_res(raw: str) -> float:
+def _parse_frame_time_res(raw: str) -> float:
     mapping = {
         "SecMsec": 1e-3,
         "Sec100Usec": 100e-6,
@@ -434,11 +440,13 @@ def _parse_types(types: Sequence[str]) -> Tuple[List[NumericType], List[int], in
 
 
 def analyze_file_header(header: Header) -> FrameDefinition:
+    """structures the information contained in the file ascii header"""
     env = header.environment
     frame_type: Optional[FrameType] = None
     header_size = -1
     footer_size = -1
 
+    # hard-coded dataframe metadata based on file format
     if env[0] == "TOB1":
         frame_type = FrameType.TOB1
         header_size = 0
@@ -455,12 +463,12 @@ def analyze_file_header(header: Header) -> FrameDefinition:
         raise ValueError(f"Unknown file type: {env[0]}")
 
     if frame_type == FrameType.TOB1:
-        notsp_res = 0.0
-        size = 0
-        intended_size = 0
+        non_timestamped_record_interval = 0.0 
+        dataframe_size = 0
+        intended_table_nlines = 0
         val_stamp = 0
         comp_val_stamp = 0
-        subframe_res = 0.0
+        frame_time_res = 0.0
         ringrecord = 0
         tremoval = 0
     else:
@@ -470,57 +478,57 @@ def analyze_file_header(header: Header) -> FrameDefinition:
         if frame_type == FrameType.TOB3 and len(table_fields) < 8:
             raise ValueError("Not enough fields at header line 2 for TOB3")
 
-        notsp_res = _parse_notsp_res(table_fields[1])
-        size = int(_parse_float_prefix(table_fields[2]))
-        intended_size = int(_parse_float_prefix(table_fields[3]))
+        non_timestamped_record_interval = _parse_non_timestamped_record_interval(table_fields[1])
+        dataframe_size = int(_parse_float_prefix(table_fields[2]))
+        intended_table_nlines = int(_parse_float_prefix(table_fields[3]))
         val_stamp = int(_parse_float_prefix(table_fields[4]))
         comp_val_stamp = int(0xFFFF ^ val_stamp)
-        subframe_res = _parse_subframe_res(table_fields[5])
+        frame_time_res = _parse_frame_time_res(table_fields[5])
         ringrecord = int(_parse_float_prefix(table_fields[6])) if frame_type == FrameType.TOB3 else 0
         tremoval = int(_parse_float_prefix(table_fields[7])) if frame_type == FrameType.TOB3 else 0
 
-    # File creation time
     if frame_type == FrameType.TOB1:
-        t0 = 0
+        file_creation_time = 0
     else:
         try:
             dt = datetime.strptime(env[7], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            t0 = int(dt.timestamp())
+            file_creation_time = int(dt.timestamp())
         except Exception:
-            t0 = 0
+            file_creation_time = 0
 
-    # NAN thresholds based on datalogger model
     fp2_nan, fp4_nan, uint2_nan = _nan_thresholds(env[2] if len(env) > 2 else "")
 
     data_types, field_opts, data_length = _parse_types(header.types)
 
     nb_fields = len(header.names)
     if frame_type == FrameType.TOB1:
-        nb_data_lines = 1
+        nb_data_lines_major = 1
         data_line_padding = 0
-        if size == 0:
-            size = data_length
+        if dataframe_size == 0:
+            dataframe_size = data_length
     else:
-        data_segment_size = size - (header_size + footer_size)
+        data_segment_size = dataframe_size - (header_size + footer_size)
         if data_length == 0:
             raise ValueError("Data length is zero; cannot compute frame layout")
-        nb_data_lines = int(math.floor(data_segment_size / data_length))
-        if nb_data_lines == 0:
+        nb_data_lines_major = int(math.floor(data_segment_size / data_length))
+        if nb_data_lines_major == 0:
             raise ValueError("Frame contains no data lines (check header sizes)")
-        padding_total = data_segment_size - (nb_data_lines * data_length)
-        if padding_total % nb_data_lines != 0:
+
+        # remaining bytes per line which contain no usable data. Assumed to be padding at the end of each data line.
+        padding_total = data_segment_size - (nb_data_lines_major * data_length)
+        if padding_total % nb_data_lines_major != 0:
             raise ValueError("Calculated frame padding is invalid")
-        data_line_padding = padding_total // nb_data_lines
+        data_line_padding = padding_total // nb_data_lines_major
 
     return FrameDefinition(
         frame_type=frame_type,
-        notsp_res=notsp_res,
-        size=size,
-        intended_size=intended_size,
+        non_timestamped_record_interval=non_timestamped_record_interval,
+        dataframe_size=dataframe_size,
+        intended_table_nlines=intended_table_nlines,
         val_stamp=val_stamp,
         comp_val_stamp=comp_val_stamp,
-        subframe_res=subframe_res,
-        t0=t0,
+        frame_time_res=frame_time_res,
+        file_creation_time=file_creation_time,
         ringrecord=ringrecord,
         tremoval=tremoval,
         header_size=header_size,
@@ -529,16 +537,16 @@ def analyze_file_header(header: Header) -> FrameDefinition:
         data_types=data_types,
         field_options=field_opts,
         data_length=data_length,
-        nb_data_lines=nb_data_lines,
+        nb_data_lines_major=nb_data_lines_major,
         data_line_padding=data_line_padding,
         fp2_nan=fp2_nan,
         fp4_nan=fp4_nan,
         uint2_nan=uint2_nan,
+
     )
 
 
 # Output header rendering
-
 def print_headers(header: Header, config: Config, frame: FrameDefinition, writer: OutputWriter) -> None:
     writer.write_text(f"{config.comments}\"TOA5\"")
     for entry in header.environment[1:-1]:
@@ -706,14 +714,32 @@ def decode_field(
 # Frame decoding
 
 def _read_frame_footer(raw: bytes) -> Tuple[int, int, int, int, int, int]:
+    """
+    Parse the footer of a dataframe.
+
+    Returns
+    -------
+    footer_offset: int
+        TOB3: 0 for a standard-size (major) frame. For a truncated (minor) frame, the total size of the frame.
+        TOB2: number of major frames that do not have an associated minor frame.
+    file_mark: int
+        file mark: all records in frame occured before the mark
+    ring_mark: int
+        TOB3: ring mark: card removed after this frame
+        TOB2: 0
+    empty_frame: int
+        frame contains no record
+    minor_frame: int
+        indicates a minor frame
+    """
     content = int.from_bytes(raw[-4:], "little", signed=True)
     footer_offset = content & 0x7FF
-    flag_f = (content >> 11) & 0x1
-    flag_r = (content >> 12) & 0x1
-    flag_e = (content >> 13) & 0x1
-    flag_m = (content >> 14) & 0x1
+    file_mark = (content >> 11) & 0x1
+    ring_mark = (content >> 12) & 0x1
+    empty_frame = (content >> 13) & 0x1
+    minor_frame = (content >> 14) & 0x1
     footer_validation = (content >> 16) & 0xFFFF
-    return footer_offset, flag_f, flag_r, flag_e, flag_m, footer_validation
+    return footer_offset, file_mark, ring_mark, empty_frame, minor_frame, footer_validation
 
 
 def _read_frame_header(raw: bytes, frame: FrameDefinition) -> Tuple[float, int]:
@@ -721,7 +747,7 @@ def _read_frame_header(raw: bytes, frame: FrameDefinition) -> Tuple[float, int]:
     cursor = FrameCursor(raw)
     time_offset = cursor.read_i32_le() + TO_EPOCH
     subseconds = cursor.read_i32_le()
-    timestamp = float(time_offset) + (float(subseconds) * frame.subframe_res)
+    timestamp = float(time_offset) + (float(subseconds) * frame.frame_time_res)
     beg_record = cursor.read_i32_le() if frame.frame_type == FrameType.TOB3 else 0
     return timestamp, beg_record
 
@@ -733,13 +759,23 @@ def analyze_tob32_frame(
     pass_type: PassType,
     writer: OutputWriter,
 ) -> int:
-    footer_offset, flag_f, flag_r, flag_e, flag_m, footer_validation = _read_frame_footer(raw)
-    if frame.val_stamp != footer_validation and frame.comp_val_stamp != footer_validation:
+    footer_offset, file_mark, ring_mark, empty_frame, minor_frame, footer_validation = _read_frame_footer(raw)
+    frame.footer_offset = footer_offset
+    frame.file_mark = file_mark
+    frame.ring_mark = ring_mark
+    frame.empty_frame = empty_frame
+    frame.minor_frame = minor_frame
+    frame.footer_validation = footer_validation
+
+    # frame failed validation or is empty: early exit
+    if frame.val_stamp != frame.footer_validation and frame.comp_val_stamp != frame.footer_validation:
         return 0
-    if flag_e == 1 or flag_m == 1:
+    if frame.empty_frame == 1:
         return 0
 
     timestamp, beg_record = _read_frame_header(raw, frame)
+    
+    # handles out-of-order records in ring-memory mode by skipping records that are not from the current pass
     if pass_type == PassType.PASS1 and frame.frame_type == FrameType.TOB3 and beg_record >= frame.ringrecord:
         return 0
     if pass_type == PassType.PASS2 and frame.frame_type == FrameType.TOB3 and beg_record < frame.ringrecord:
@@ -748,11 +784,20 @@ def analyze_tob32_frame(
     cursor = FrameCursor(raw)
     cursor.pos = frame.header_size
     lines_written = 0
-    for line_index in range(1, frame.nb_data_lines + 1):
-        ts_str = _format_timestamp(timestamp + frame.notsp_res * (line_index - 1), config)
+
+    # for a major frame: read the normal number of lines
+    # for a minor frame: the footer offset indicates how many lines we should read
+    nb_data_lines = frame.nb_data_lines_major
+    if frame.minor_frame == 1:
+        nb_data_lines = frame.footer_offset // frame.data_length
+
+    for line_index in range(1, nb_data_lines + 1):
+        ts_str = _format_timestamp(timestamp + frame.non_timestamped_record_interval * (line_index - 1), config)
+        
         fields = []
         for field_index in range(1, frame.nb_fields + 1):
             fields.append(decode_field(frame.data_types[field_index], cursor, frame, config, field_index))
+        
         writer.write_line(ts_str + "".join(f"{config.separator}{val}" for val in fields))
         cursor.pos += frame.data_line_padding
         lines_written += 1
@@ -783,19 +828,22 @@ def read_data(config: Config, frame: FrameDefinition, fp: BinaryIO, writer: Outp
     for pass_idx in range(1, max_pass + 1):
         nb_failures = 0
         while (config.stop_cond == 0 or nb_failures < config.stop_cond):
-            raw = fp.read(frame.size)
-            if len(raw) < frame.size:
+            raw = fp.read(frame.dataframe_size)
+            if len(raw) < frame.dataframe_size:
+                print(f"Early exit on incomplete frame: expected {frame.dataframe_size} bytes, got {len(raw)} bytes ({raw})")
                 break
             if frame.frame_type == FrameType.TOB1:
                 lines = analyze_tob1_frame(raw, frame, config, writer)
             else:
+                if config.nb_lines_read > 1340:
+                    print(f"Debug: reached line {config.nb_lines_read} at file position {fp.tell()} (frame size {frame.dataframe_size})")
                 lines = analyze_tob32_frame(raw, frame, config, pass_type, writer)
             if lines == 0:
                 nb_failures += 1
             else:
                 config.nb_lines_read += lines
             if pbar is not None:
-                pbar.update(frame.size)
+                pbar.update(frame.dataframe_size)
         if max_pass == 2 and pass_idx == 1:
             pass_type = PassType.PASS2
             fp.seek(start_pos)
@@ -843,16 +891,19 @@ def execute_cfg(cfg: Config, module=False) -> int:
         if input_path.stem in cfg.existing_files:
             sys.stderr.write(f"*** Skipping already processed file: {input_path.name}\n")
             continue
-        output_path = cfg.output_files[i]
+        output_dir = cfg.output_files[i]
 
+        # initialize datastreams and data writer
         input_stream: BinaryIO = open(input_path, "rb")
-        output_stream = open(output_path, "w")
+        output_stream = open(output_dir, "w")
         writer = OutputWriter(output_stream, False)
         cfg.nb_lines_read = 0  # reset per file
         frame_def: Optional[FrameDefinition] = None
+
         try:
-            # Early TOA5 detection: if first field is "TOA5", just copy with warning
             first_line = input_stream.readline(MAX_LINE)
+
+            # Early exit for TOA5 files (already decoded) - just copy the content
             decoded = first_line.decode("ascii", errors="ignore") if first_line else ""
             if decoded.startswith("\"TOA5\"") or decoded.startswith("TOA5"):
                 sys.stderr.write(f"*** WARNING: TOA5 file detected {input_path.name}; copying without decoding.\n")
@@ -868,16 +919,13 @@ def execute_cfg(cfg: Config, module=False) -> int:
                         writer.write_bytes(chunk)
                 continue
 
-            # rewind or rebuild stream to include the first line for normal processing
-            if input_stream.seekable():
-                input_stream.seek(0)
-            else:
-                input_stream = io.BytesIO(first_line + input_stream.read())
+            # rewind to start for TOB file processing
+            input_stream.seek(0)
 
             header = read_file_header(input_stream)
             frame_def = analyze_file_header(header)
             # attach resolution for timestamp formatting
-            cfg.notsp_res = frame_def.notsp_res  # type: ignore[attr-defined]
+            cfg.non_timestamped_record_interval = frame_def.non_timestamped_record_interval  # type: ignore[attr-defined]
             print_headers(header, cfg, frame_def, writer)
             read_data(cfg, frame_def, input_stream, writer, pbar)
         except BaseException as e:
@@ -890,16 +938,16 @@ def execute_cfg(cfg: Config, module=False) -> int:
         finally:
             input_stream.close()
             output_stream.close()
-            if cleanup_output and os.path.isfile(output_path):
+            if cleanup_output and os.path.isfile(output_dir):
                 try:
-                    os.remove(output_path)
-                    sys.stderr.write(f"*** Incomplete output removed: {output_path.name}\n")
+                    os.remove(output_dir)
+                    sys.stderr.write(f"*** Incomplete output removed: {output_dir.name}\n")
                 except OSError:
-                    sys.stderr.write(f"*** Failed to remove incomplete output: {output_path.name}\n")
+                    sys.stderr.write(f"*** Failed to remove incomplete output: {output_dir.name}\n")
 
         if cleanup_output or frame_def is None:
             continue
-        success_paths.append(output_path)
+        success_paths.append(output_dir)
 
         if not module:
             sys.stderr.write("*** ")
@@ -917,11 +965,18 @@ def execute_cfg(cfg: Config, module=False) -> int:
 
 def camp2ascii(
         input_files: str | Path, 
-        output_path: str | Path, 
+        output_dir: str | Path, 
         n_invalid: int | None = None, 
-        skip_done: bool = False, 
         pbar: bool = False, 
         tob32: bool = False,
+        use_filemarks: bool = False,
+        use_removemarks: bool = False,
+        time_interval: datetime.timedelta | None = None,
+        convert_only_new_data: bool = False,
+        timedate_filenames: int = 0,
+        append_to_last_file: bool = False,
+        store_record_numbers: bool = True,
+        store_timestamp: bool = True,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -929,17 +984,32 @@ def camp2ascii(
     ----------
     input_files : str | Path | list[str | Path]
         Path(s) to input TOB file, directory, or glob pattern.
-    output_path : str | Path
+    output_dir : str | Path
         Path to output directory (or file when decoding a single input).
     n_invalid : int | None, optional
         Stop after encountering N invalid data frames (0=never). Default is None.
-    skip_done : bool, optional
-        Skip input files for which the output file already exists. Default is False.
     pbar : bool, optional
         Show progress bar (requires tqdm). Default is False.
     tob32: bool, optional
         Enable tob32 compatibility mode. Default is False.
-
+        Setting this to true may result in out-of-order records in the output when processing TOB3 files with ring memory enabled.
+    use_filemarks: bool, optional
+        Create a new output file when a filemark is found. Default is False.
+    use_removemarks: bool, optional
+        Create a new output file when a removemark is found. Default is False.
+    time_interval: datetime.timedelta | None, optional
+        Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
+    convert_only_new_data: bool, optional
+        Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
+    timedate_filenames: int, optional
+        name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
+    append_to_last_file: bool, optional
+        append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
+    store_record_numbers: bool, optional
+        store the record number of each line as an additional column in the output. Default is True.
+    store_timestamp: bool, optional
+        store the timestamp of each line as an additional column in the output. Default is True.
+      
     Returns
     -------
     list[Path]
@@ -950,15 +1020,16 @@ def camp2ascii(
 
     if not isinstance(input_files, (list, tuple)):
         input_files = [input_files]
+    
     input_files = [Path(p) for p in input_files]
     cfg.input_files = input_files
-    Path(output_path).mkdir(parents=True, exist_ok=True)
-    cfg.output_files = [Path(output_path) / p.name for p in cfg.input_files]
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    cfg.output_files = [Path(output_dir) / p.name for p in cfg.input_files]
 
     cfg.stop_cond = n_invalid if n_invalid is not None else 0
     
-    if skip_done:
-        out_dir = Path(output_path)
+    if convert_only_new_data:
+        out_dir = Path(output_dir)
         if out_dir.is_dir():
             cfg.existing_files = [p.stem for p in out_dir.glob("*")]
     if pbar:
@@ -972,12 +1043,25 @@ def camp2ascii(
     if tob32:
         cfg.tob32 = True
 
-    output_paths = execute_cfg(cfg, True)
+    output_dirs = execute_cfg(cfg, True)
     
-    return [Path(p) for p in output_paths]
+    return [Path(p) for p in output_dirs]
     
     
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    debug = True
+    if debug:
+        import pandas as pd
+        from pathlib import Path
+        tob3_files = ["/home/alextsfox/git-repos/camp2ascii/tests/tob3/60955.CS616_30Min_UF_41.dat"]
+        toa5_c2a_dir = Path("tests/toa5-c2a")
+        out_files = camp2ascii(tob3_files, toa5_c2a_dir, pbar=True)
+        c2a_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP") for f in out_files]).sort_index()
+        cc_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP") for f in Path("tests/toa5-cc").glob("TOA5*")]).sort_index()
+        start, end = "2022-07-03 12:00", "2022-07-04 12:00"
+        print(c2a_data.loc[start:end, "WC_C5cm_Avg"].shape)
+        print(cc_data.loc[start:end, "WC_C5cm_Avg"].shape)
+    else:
+        raise SystemExit(main(sys.argv[1:]))
