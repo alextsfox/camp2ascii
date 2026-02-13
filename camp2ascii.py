@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from glob import glob
 import io
 import math
 import os
@@ -1097,11 +1098,17 @@ def camp2ascii(
     """
     cfg = Config()
 
+    # parse input files (supports glob pattern, directory, or single file)
+    if isinstance(input_files, str):
+        if "?" in input_files or "*" in input_files:
+            input_files = list(glob(input_files))
+    if isinstance(input_files, (str, Path)) and Path(input_files).is_dir():
+        input_files = list(Path(input_files).glob("*"))
     if not isinstance(input_files, (list, tuple)):
         input_files = [input_files]
-    
     input_files = [Path(p) for p in input_files]
     cfg.input_files = input_files
+    
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
 
