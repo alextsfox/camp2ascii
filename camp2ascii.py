@@ -17,10 +17,8 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import glob
 import math
 import os
-import signal
 import sys
 from dataclasses import dataclass, field
 import struct
@@ -80,6 +78,12 @@ class PassType(Enum):
     PASS1 = auto()
     PASS2 = auto()
 
+class FrameProcessResult(Enum):
+    # REPAIRED = auto()
+    CORRUPTED = auto()
+    # FILEMARK = auto()
+    # INVALID = auto()
+    SUCCESS = auto()
 
 @dataclass
 class Config:
@@ -143,7 +147,7 @@ class FrameDefinition:
     fp2_nan: int                    # FP2 NaN threshold for this logger
     fp4_nan: int                    # FP4 NaN threshold for this logger
     uint2_nan: int                  # UINT2 NaN threshold for this logger
-    footer_offset: int = 0          # TOB3: >0 indicates the length of the minor frame. TOB2: the number of major frames without an associated minor frame.
+    footer_offset: int = 0          # TOB3: >0 indicates the number of lines short the minor frame is. TOB2: the number of major frames without an associated minor frame.
     file_mark: int = 0              # all records in frame occured before the filemark
     ring_mark: int = 0              # TOB3: card removed after this frame
     empty_frame: int = 0            # frame contains no record
@@ -758,7 +762,7 @@ def analyze_tob32_frame(
     config: Config,
     pass_type: PassType,
     writer: OutputWriter,
-) -> int:
+) -> tuple[int, int]:
     footer_offset, file_mark, ring_mark, empty_frame, minor_frame, footer_validation = _read_frame_footer(raw)
     frame.footer_offset = footer_offset
     frame.file_mark = file_mark
@@ -767,30 +771,38 @@ def analyze_tob32_frame(
     frame.minor_frame = minor_frame
     frame.footer_validation = footer_validation
 
-    # frame failed validation or is empty: early exit
-    if frame.val_stamp != frame.footer_validation and frame.comp_val_stamp != frame.footer_validation:
-        return 0
-    if frame.empty_frame == 1:
-        return 0
+    if frame.footer_validation not in (frame.val_stamp, frame.comp_val_stamp):# and frame.file_mark == 0:
+        return 0, FrameProcessResult.SUCCESS
+    
+    nb_data_lines = frame.nb_data_lines_major
+    if frame.minor_frame == 1:
+        nb_data_lines = frame.nb_data_lines_major - frame.footer_offset / frame.data_length
+    
+    # detect invalid number of data lines due to possible corruption
+    # repair_attempted = False
+    if nb_data_lines < 0 or nb_data_lines % 1 != 0:
+        if not config.attempt_to_repair:
+            return 0, FrameProcessResult.CORRUPTED
+        # repair_attempted = True
+        # nb_data_lines -= 1
+        # nb_data_lines = max(0, nb_data_lines)
+        # print(nb_data_lines)
+    nb_data_lines = int(nb_data_lines)
+    # print(nb_data_lines)
 
     timestamp, beg_record = _read_frame_header(raw, frame)
-    
+
     # handles out-of-order records in ring-memory mode by skipping records that are not from the current pass
     if pass_type == PassType.PASS1 and frame.frame_type == FrameType.TOB3 and beg_record >= frame.ringrecord:
-        return 0
+        return 0, FrameProcessResult.SUCCESS
     if pass_type == PassType.PASS2 and frame.frame_type == FrameType.TOB3 and beg_record < frame.ringrecord:
-        return 0
+        return 0, FrameProcessResult.SUCCESS
 
     cursor = FrameCursor(raw)
     cursor.pos = frame.header_size
     lines_written = 0
 
-    # for a major frame: read the normal number of lines
-    # for a minor frame: the footer offset indicates how many lines we should read
-    nb_data_lines = frame.nb_data_lines_major
-    if frame.minor_frame == 1:
-        nb_data_lines = frame.footer_offset // frame.data_length
-
+    
     for line_index in range(1, nb_data_lines + 1):
         ts_str = _format_timestamp(timestamp + frame.non_timestamped_record_interval * (line_index - 1), config)
         
@@ -801,7 +813,10 @@ def analyze_tob32_frame(
         writer.write_line(ts_str + "".join(f"{config.separator}{val}" for val in fields))
         cursor.pos += frame.data_line_padding
         lines_written += 1
-    return lines_written
+    
+    # if repair_attempted:
+    #     return lines_written, FrameProcessResult.REPAIRED
+    return lines_written, FrameProcessResult.SUCCESS
 
 
 def analyze_tob1_frame(raw: bytes, frame: FrameDefinition, config: Config, writer: OutputWriter) -> int:
@@ -813,7 +828,7 @@ def analyze_tob1_frame(raw: bytes, frame: FrameDefinition, config: Config, write
     return 1
 
 
-def read_data(config: Config, frame: FrameDefinition, fp: BinaryIO, writer: OutputWriter, pbar = None) -> None:
+def read_data(config: Config, frame: FrameDefinition, fp: BinaryIO, writer: OutputWriter, pbar = None, fname=None) -> None:
     max_pass = 1
     pass_type = PassType.SINGLE
     if frame.frame_type == FrameType.TOB3 and frame.ringrecord > 0 and config.order_output:
@@ -829,29 +844,35 @@ def read_data(config: Config, frame: FrameDefinition, fp: BinaryIO, writer: Outp
         nb_failures = 0
         while (config.stop_cond == 0 or nb_failures < config.stop_cond):
             raw = fp.read(frame.dataframe_size)
+            
+            # TODO: how does this work if we reached EOF?
             if len(raw) < frame.dataframe_size:
-                print(f"Early exit on incomplete frame: expected {frame.dataframe_size} bytes, got {len(raw)} bytes ({raw})")
+                if len(raw) != 0:
+                    print(f"Reached EOF! Expected {frame.dataframe_size} bytes, got {len(raw)} bytes ({raw})")
                 break
+            
             if frame.frame_type == FrameType.TOB1:
                 lines = analyze_tob1_frame(raw, frame, config, writer)
             else:
-                if config.nb_lines_read > 1340:
-                    print(f"Debug: reached line {config.nb_lines_read} at file position {fp.tell()} (frame size {frame.dataframe_size})")
-                lines = analyze_tob32_frame(raw, frame, config, pass_type, writer)
+                lines, result = analyze_tob32_frame(raw, frame, config, pass_type, writer)
+            
+            # if result == FrameProcessResult.REPAIRED:
+            #     sys.stderr.write(f"*** Repair attempted for corrupt frame File {fname}\n")
+            if result == FrameProcessResult.CORRUPTED:
+                sys.stderr.write(f"*** Skipping corrupt frame in file {fname}.\n")
             if lines == 0:
                 nb_failures += 1
             else:
                 config.nb_lines_read += lines
+            
             if pbar is not None:
                 pbar.update(frame.dataframe_size)
+        
         if max_pass == 2 and pass_idx == 1:
             pass_type = PassType.PASS2
             fp.seek(start_pos)
-        
-
 
 # Entry point
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -927,7 +948,7 @@ def execute_cfg(cfg: Config, module=False) -> int:
             # attach resolution for timestamp formatting
             cfg.non_timestamped_record_interval = frame_def.non_timestamped_record_interval  # type: ignore[attr-defined]
             print_headers(header, cfg, frame_def, writer)
-            read_data(cfg, frame_def, input_stream, writer, pbar)
+            read_data(cfg, frame_def, input_stream, writer, pbar, str(input_path))
         except BaseException as e:
             sys.stderr.write(f"*** FATAL ERROR processing {input_path.name}: {e}\n")
             sys.stderr.write("*** In-progress and queued files will not be processed.\n")
@@ -977,6 +998,7 @@ def camp2ascii(
         append_to_last_file: bool = False,
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
+        # attempt_to_repair_corrupt_frames: bool = False,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -1009,6 +1031,8 @@ def camp2ascii(
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
         store the timestamp of each line as an additional column in the output. Default is True.
+    # attempt_to_repair_corrupt_frames: bool, optional
+    #     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
       
     Returns
     -------
@@ -1027,6 +1051,8 @@ def camp2ascii(
     cfg.output_files = [Path(output_dir) / p.name for p in cfg.input_files]
 
     cfg.stop_cond = n_invalid if n_invalid is not None else 0
+
+    cfg.attempt_to_repair = False
     
     if convert_only_new_data:
         out_dir = Path(output_dir)
@@ -1047,21 +1073,40 @@ def camp2ascii(
     
     return [Path(p) for p in output_dirs]
     
-    
-
 
 if __name__ == "__main__":
     debug = True
     if debug:
+        c2a = camp2ascii
         import pandas as pd
         from pathlib import Path
-        tob3_files = ["/home/alextsfox/git-repos/camp2ascii/tests/tob3/60955.CS616_30Min_UF_41.dat"]
+
+        tob3_file_names = sorted(f.name for f in Path("tests/tob3").glob("*10Hz*.dat"))
+        # tob3_file_names = [tob3_file_names[0]]
+        # tob3_file_names = ["60955.CS616_30Min_UF_40.dat", "60955.CS616_30Min_UF_41.dat", "60955.CS616_30Min_UF_42.dat"]
+
+        tob3_files = [Path(f"tests/tob3/{name}") for name in tob3_file_names]
+        toa5_cc_file_names = [Path(f"tests/toa5-cc/TOA5_{name}") for name in tob3_file_names]
         toa5_c2a_dir = Path("tests/toa5-c2a")
-        out_files = camp2ascii(tob3_files, toa5_c2a_dir, pbar=True)
+
+
+        # out_files = c2a(tob3_files, toa5_c2a_dir, pbar=True)
+        out_files = toa5_c2a_dir.glob("*10Hz*.dat")
+
         c2a_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP") for f in out_files]).sort_index()
-        cc_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP") for f in Path("tests/toa5-cc").glob("TOA5*")]).sort_index()
-        start, end = "2022-07-03 12:00", "2022-07-04 12:00"
-        print(c2a_data.loc[start:end, "WC_C5cm_Avg"].shape)
-        print(cc_data.loc[start:end, "WC_C5cm_Avg"].shape)
+        cc_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3]) for f in toa5_cc_file_names])
+        cc_data["TIMESTAMP"] = pd.to_datetime(cc_data["TIMESTAMP"], format="ISO8601")
+        cc_data = cc_data.set_index("TIMESTAMP").sort_index()
+
+        print(cc_data.shape, c2a_data.shape)
+        print(c2a_data)
+        print(cc_data)
+        print(len(list(set(c2a_data.index) - set(cc_data.index))), list(set(c2a_data.index) - set(cc_data.index))[:100])
+        print()
+        print(len(list(set(cc_data.index) - set(c2a_data.index))), list(set(cc_data.index) - set(c2a_data.index))[:100])
+
+        print(c2a_data.loc[list(set(c2a_data.index) - set(cc_data.index))[:100]])
+
+        
     else:
         raise SystemExit(main(sys.argv[1:]))
