@@ -1,5 +1,5 @@
 # 0.2.0
-* Added functionality to match several CardConvert options
+* Added functionality to match several CardConvert options, will continue to add more in future releases
 * Fixed a bug where partial/minor dataframes in TOB files were not skipped
 
 

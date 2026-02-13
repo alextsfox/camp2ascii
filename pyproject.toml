@@ -28,6 +28,7 @@ progress = ["tqdm>=4.0"]
 
 [project.urls]
 Repository = "https://github.com/alextsfox/camp2ascii"
+Changelog = "https://github.com/alextsfox/camp2ascii/blob/master/CHANGELOG.md"
 
 [project.scripts]
 camp2ascii = "camp2ascii:main"
