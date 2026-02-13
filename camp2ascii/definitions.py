@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
-import io
 import math
 from enum import Enum, auto
 

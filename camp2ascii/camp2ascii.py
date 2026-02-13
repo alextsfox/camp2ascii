@@ -13,13 +13,12 @@ Copyright (C) 2026 Alexander Fox, University of Wyoming
 
 from __future__ import annotations
 
-import argparse
 from glob import glob
 import sys
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING
 from pathlib import Path
 
-from .parsingandio import execute_cfg, _DEBUG
+from .parsingandio import execute_cfg
 from .definitions import Config
 
 if TYPE_CHECKING:
