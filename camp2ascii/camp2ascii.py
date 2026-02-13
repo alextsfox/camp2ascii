@@ -82,6 +82,8 @@ def camp2ascii(
     cfg = Config()
 
     # parse input files (supports glob pattern, directory, or single file)
+    if isinstance(input_files, map):
+        input_files = list(input_files)
     if isinstance(input_files, str):
         if "?" in input_files or "*" in input_files:
             input_files = list(glob(input_files))
@@ -113,7 +115,7 @@ def camp2ascii(
     cfg.store_record_numbers = store_record_numbers
     cfg.store_timestamp = store_timestamp
 
-    output_files = execute_cfg(cfg, True)
+    output_files = execute_cfg(cfg, cli=False)
     return output_files
     
 # Entry point
@@ -176,7 +178,7 @@ def camp2ascii_cli(argv: Optional[Sequence[str]] = None) -> int:
         argv = sys.argv[1:]
     cfg = parse_args(argv)
 
-    return execute_cfg(cfg)
+    return execute_cfg(cfg, cli=True)
 
 if __name__ == "__main__":
     debug = True

@@ -15,7 +15,7 @@ from .definitions import (
 if TYPE_CHECKING:
     from tqdm import tqdm
 
-_DEBUG = True
+_DEBUG = False
 
 class FrameCursor:
     """Helper to read typed data from bytes."""
