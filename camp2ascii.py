@@ -966,7 +966,7 @@ def execute_cfg(cfg: Config, module=False) -> int:
             sys.stderr.write(f"*** Skipping already processed file: {input_path.name}\n")
             continue
         out_file = cfg.output_files[i]
-        out_file = out_file.with_name("TOA5_" + out_file.stem + ".dat") if out_file.is_dir() else out_file
+        out_file = out_file.with_name("TOA5_" + out_file.stem + ".dat")
 
         # initialize datastreams and data writer
         input_stream: BinaryIO = open(input_path, "rb")
@@ -1034,6 +1034,7 @@ def execute_cfg(cfg: Config, module=False) -> int:
                 sys.stderr.write("TOB3 file - ")
             # sys.stderr.write(f"{cfg.nb_lines_read} lines read ({input_path.name})\n")
 
+
     if module:
         return success_paths
     return total_status
@@ -1051,10 +1052,6 @@ def execute_cfg(cfg: Config, module=False) -> int:
 #     name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
 # append_to_last_file: bool, optional
 #     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
-# store_record_numbers: bool, optional
-#     store the record number of each line as an additional column in the output. Default is True.
-# store_timestamp: bool, optional
-#     store the timestamp of each line as an additional column in the output. Default is True.
 # attempt_to_repair_corrupt_frames: bool, optional
 #     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
 # timedate_filenames: int, optional
@@ -1149,9 +1146,9 @@ if __name__ == "__main__":
         import pandas as pd
         from pathlib import Path
 
-        # tob3_file_names = sorted(f.name for f in Path("tests/tob3").glob("*10Hz*.dat"))
+        tob3_file_names = sorted(f.name for f in Path("tests/tob3").glob("*10Hz*.dat"))
         # tob3_file_names = [tob3_file_names[0]]
-        tob3_file_names = ["60955.CS616_30Min_UF_40.dat", "60955.CS616_30Min_UF_41.dat", "60955.CS616_30Min_UF_42.dat"]
+        # tob3_file_names = ["60955.CS616_30Min_UF_40.dat", "60955.CS616_30Min_UF_41.dat", "60955.CS616_30Min_UF_42.dat"]
 
         tob3_files = [Path(f"tests/tob3/{name}") for name in tob3_file_names]
         toa5_cc_file_names = [Path(f"tests/toa5-cc/TOA5_{name}") for name in tob3_file_names]
