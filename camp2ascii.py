@@ -9,7 +9,6 @@ To use as a standalone script, run it from the command line with input and outpu
 Copyright (C) 2026 Alexander Fox, University of Wyoming
 """
 
-# TODO: remove unused code bits
 # TODO: clean up stdout and stderr
 
 from __future__ import annotations
@@ -85,6 +84,11 @@ class FrameProcessResult(Enum):
     # INVALID = auto()
     SUCCESS = auto()
 
+class TimedateFileNames(Enum):
+    DISABLED = 0
+    MONTH_DAY = 1
+    DOY = 2
+
 @dataclass
 class Config:
     """Config flags"""
@@ -112,6 +116,9 @@ class Config:
     pbar: bool = False                    # show progress bar
     existing_files: list = field(default_factory=list)             # list of existing output files to skip
     # accept_incomplete: bool = False      # allow partially decoded files on error
+    store_record_numbers: bool = True          # include record numbers in output
+    store_timestamp: bool = True               # include timestamps in output
+    timedate_filenames: TimedateFileNames = TimedateFileNames.DISABLED  # name output files based on first timestamp in file. 0: disabled, 1: use YYYY_MM_DD_HHMM format, 2: use YYYY_DDD_HHMM format.
 
 @dataclass
 class Header:
@@ -366,12 +373,17 @@ def _nan_thresholds(datalogger: str) -> Tuple[int, int, int]:
     return FP2_NAN, FP4_NAN, UINT2_NAN
 
 
-def _parse_types(types: Sequence[str]) -> Tuple[List[NumericType], List[int], int]:
-    data_types: List[NumericType] = [NumericType.NONE] * (len(types) + 1)
-    field_opts: List[int] = [0] * (len(types) + 1)
+def _parse_types(types: Sequence[str], cfg: Config) -> Tuple[List[NumericType], List[int], int]:
+    extra_fields = 0
+    if cfg.store_timestamp:
+        extra_fields += 1
+    if cfg.store_record_numbers:
+        extra_fields += 1
+    data_types: List[NumericType] = [NumericType.NONE] * (len(types) + extra_fields)
+    field_opts: List[int] = [0] * (len(types) + extra_fields)
     frame_length = 0
 
-    for idx, entry in enumerate(types, start=1):
+    for idx, entry in enumerate(types, start=extra_fields):
         t = entry
         field_len = 0
         if t.startswith("IEEE4B"):
@@ -443,7 +455,7 @@ def _parse_types(types: Sequence[str]) -> Tuple[List[NumericType], List[int], in
     return data_types, field_opts, frame_length
 
 
-def analyze_file_header(header: Header) -> FrameDefinition:
+def analyze_file_header(header: Header, cfg: Config) -> FrameDefinition:
     """structures the information contained in the file ascii header"""
     env = header.environment
     frame_type: Optional[FrameType] = None
@@ -502,7 +514,7 @@ def analyze_file_header(header: Header) -> FrameDefinition:
 
     fp2_nan, fp4_nan, uint2_nan = _nan_thresholds(env[2] if len(env) > 2 else "")
 
-    data_types, field_opts, data_length = _parse_types(header.types)
+    data_types, field_opts, data_length = _parse_types(header.types, cfg)
 
     nb_fields = len(header.names)
     if frame_type == FrameType.TOB1:
@@ -560,19 +572,40 @@ def print_headers(header: Header, config: Config, frame: FrameDefinition, writer
     else:
         writer.write_line(f"{config.separator}\"{header.table[0]}\"")
 
-    first_label = "LINE" if frame.frame_type == FrameType.TOB1 else "TIMESTAMP"
-    writer.write_text(f"{config.comments}\"{first_label}\"")
+    match (config.store_timestamp, config.store_record_numbers):
+        case (True, True):
+            first_label = '"TIMESTAMP","RECORD"'
+            first_unit = '"TS","RN"'
+            first_proc = '"",""'
+        case (True, False):
+            first_label = '"TIMESTAMP"'
+            first_unit = '"TS"'
+            first_proc = '""'
+        case (False, True):
+            first_label = '"RECORD"'
+            first_unit = '"RN"'
+            first_proc = '""'
+        case (False, False):
+            first_label = ""
+            first_unit = ""
+            first_proc = ""
+
+    if frame.frame_type == FrameType.TOB1:
+        first_label = '"LINE"'
+        first_unit = '"LN"'
+        first_proc = '""'
+
+    writer.write_text(f"{config.comments}{first_label}")
     for name in header.names:
         writer.write_text(f"{config.separator}\"{name}\"")
     writer.write_line()
 
-    first_unit = "LN" if frame.frame_type == FrameType.TOB1 else "TS"
-    writer.write_text(f"{config.comments}\"{first_unit}\"")
+    writer.write_text(f"{config.comments}{first_unit}")
     for unit in header.units:
         writer.write_text(f"{config.separator}\"{unit}\"")
     writer.write_line()
 
-    writer.write_text(f"{config.comments}\"\"")
+    writer.write_text(f"{config.comments}{first_proc}")
     for proc in header.processing:
         writer.write_text(f"{config.separator}\"{proc}\"")
     writer.write_line()
@@ -802,15 +835,31 @@ def analyze_tob32_frame(
     cursor.pos = frame.header_size
     lines_written = 0
 
-    
+    # TODO: move into frame definition parsing so we don't have to do this every loop
+    extra_fields = 0
+    if config.store_timestamp:
+        extra_fields += 1
+    if config.store_record_numbers:
+        extra_fields += 1
     for line_index in range(1, nb_data_lines + 1):
         ts_str = _format_timestamp(timestamp + frame.non_timestamped_record_interval * (line_index - 1), config)
-        
+        recnum_str = str(int(beg_record + line_index - 1))
+
         fields = []
-        for field_index in range(1, frame.nb_fields + 1):
+        for field_index in range(extra_fields, frame.nb_fields + extra_fields):
             fields.append(decode_field(frame.data_types[field_index], cursor, frame, config, field_index))
         
-        writer.write_line(ts_str + "".join(f"{config.separator}{val}" for val in fields))
+        line = "".join(f"{config.separator}{val}" for val in fields)
+        match (config.store_timestamp, config.store_record_numbers):
+            case (True, True):
+                line = ts_str + config.separator + recnum_str + line
+            case (True, False):
+                line = ts_str + line
+            case (False, True):
+                line = recnum_str + line
+            case (False, False):
+                pass
+        writer.write_line(line)
         cursor.pos += frame.data_line_padding
         lines_written += 1
     
@@ -824,7 +873,11 @@ def analyze_tob1_frame(raw: bytes, frame: FrameDefinition, config: Config, write
     fields = []
     for field_index in range(1, frame.nb_fields + 1):
         fields.append(decode_field(frame.data_types[field_index], cursor, frame, config, field_index))
-    writer.write_line(str(config.nb_lines_read + 1) + "".join(f"{config.separator}{val}" for val in fields))
+    
+    line = "".join(f"{config.separator}{val}" for val in fields)
+    if config.store_record_numbers:
+        line = str(config.nb_lines_read + 1) + line
+    writer.write_line(line)
     return 1
 
 
@@ -912,11 +965,12 @@ def execute_cfg(cfg: Config, module=False) -> int:
         if input_path.stem in cfg.existing_files:
             sys.stderr.write(f"*** Skipping already processed file: {input_path.name}\n")
             continue
-        output_dir = cfg.output_files[i]
+        out_file = cfg.output_files[i]
+        out_file = out_file.with_name("TOA5_" + out_file.stem + ".dat") if out_file.is_dir() else out_file
 
         # initialize datastreams and data writer
         input_stream: BinaryIO = open(input_path, "rb")
-        output_stream = open(output_dir, "w")
+        output_stream = open(out_file, "w")
         writer = OutputWriter(output_stream, False)
         cfg.nb_lines_read = 0  # reset per file
         frame_def: Optional[FrameDefinition] = None
@@ -944,7 +998,7 @@ def execute_cfg(cfg: Config, module=False) -> int:
             input_stream.seek(0)
 
             header = read_file_header(input_stream)
-            frame_def = analyze_file_header(header)
+            frame_def = analyze_file_header(header, cfg)
             # attach resolution for timestamp formatting
             cfg.non_timestamped_record_interval = frame_def.non_timestamped_record_interval  # type: ignore[attr-defined]
             print_headers(header, cfg, frame_def, writer)
@@ -959,16 +1013,16 @@ def execute_cfg(cfg: Config, module=False) -> int:
         finally:
             input_stream.close()
             output_stream.close()
-            if cleanup_output and os.path.isfile(output_dir):
+            if cleanup_output and os.path.isfile(out_file):
                 try:
-                    os.remove(output_dir)
-                    sys.stderr.write(f"*** Incomplete output removed: {output_dir.name}\n")
+                    os.remove(out_file)
+                    sys.stderr.write(f"*** Incomplete output removed: {out_file.name}\n")
                 except OSError:
-                    sys.stderr.write(f"*** Failed to remove incomplete output: {output_dir.name}\n")
+                    sys.stderr.write(f"*** Failed to remove incomplete output: {out_file.name}\n")
 
         if cleanup_output or frame_def is None:
             continue
-        success_paths.append(output_dir)
+        success_paths.append(out_file)
 
         if not module:
             sys.stderr.write("*** ")
@@ -984,21 +1038,37 @@ def execute_cfg(cfg: Config, module=False) -> int:
         return success_paths
     return total_status
 
+# TODO: add
+# use_filemarks: bool, optional
+#     Create a new output file when a filemark is found. Default is False.
+# use_removemarks: bool, optional
+#     Create a new output file when a removemark is found. Default is False.
+# time_interval: datetime.timedelta | None, optional
+#     Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
+# convert_only_new_data: bool, optional
+#     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
+# timedate_filenames: int, optional
+#     name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
+# append_to_last_file: bool, optional
+#     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
+# store_record_numbers: bool, optional
+#     store the record number of each line as an additional column in the output. Default is True.
+# store_timestamp: bool, optional
+#     store the timestamp of each line as an additional column in the output. Default is True.
+# attempt_to_repair_corrupt_frames: bool, optional
+#     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
+# timedate_filenames: int, optional
+#     name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
+
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
         n_invalid: int | None = None, 
         pbar: bool = False, 
         tob32: bool = False,
-        use_filemarks: bool = False,
-        use_removemarks: bool = False,
-        time_interval: datetime.timedelta | None = None,
         convert_only_new_data: bool = False,
-        timedate_filenames: int = 0,
-        append_to_last_file: bool = False,
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
-        # attempt_to_repair_corrupt_frames: bool = False,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -1015,25 +1085,13 @@ def camp2ascii(
     tob32: bool, optional
         Enable tob32 compatibility mode. Default is False.
         Setting this to true may result in out-of-order records in the output when processing TOB3 files with ring memory enabled.
-    use_filemarks: bool, optional
-        Create a new output file when a filemark is found. Default is False.
-    use_removemarks: bool, optional
-        Create a new output file when a removemark is found. Default is False.
-    time_interval: datetime.timedelta | None, optional
-        Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
     convert_only_new_data: bool, optional
         Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
-    timedate_filenames: int, optional
-        name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
-    append_to_last_file: bool, optional
-        append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
     store_record_numbers: bool, optional
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
         store the timestamp of each line as an additional column in the output. Default is True.
-    # attempt_to_repair_corrupt_frames: bool, optional
-    #     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
-      
+    
     Returns
     -------
     list[Path]
@@ -1048,11 +1106,21 @@ def camp2ascii(
     input_files = [Path(p) for p in input_files]
     cfg.input_files = input_files
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    cfg.output_files = [Path(output_dir) / p.name for p in cfg.input_files]
+
+
 
     cfg.stop_cond = n_invalid if n_invalid is not None else 0
 
-    cfg.attempt_to_repair = False
+    # cfg.timedate_filenames = timedate_filenames
+    # match cfg.timedate_filenames:
+    #     case TimedateFileNames.DISABLED:
+    #         cfg.output_files = [Path(output_dir) / "TOA5_" + p.name for p in cfg.input_files]
+    cfg.output_files = [Path(output_dir) / p.name for p in cfg.input_files]
+
+    cfg.store_record_numbers = store_record_numbers
+    cfg.store_timestamp = store_timestamp
+
+    # cfg.attempt_to_repair = False
     
     if convert_only_new_data:
         out_dir = Path(output_dir)
@@ -1081,17 +1149,17 @@ if __name__ == "__main__":
         import pandas as pd
         from pathlib import Path
 
-        tob3_file_names = sorted(f.name for f in Path("tests/tob3").glob("*10Hz*.dat"))
+        # tob3_file_names = sorted(f.name for f in Path("tests/tob3").glob("*10Hz*.dat"))
         # tob3_file_names = [tob3_file_names[0]]
-        # tob3_file_names = ["60955.CS616_30Min_UF_40.dat", "60955.CS616_30Min_UF_41.dat", "60955.CS616_30Min_UF_42.dat"]
+        tob3_file_names = ["60955.CS616_30Min_UF_40.dat", "60955.CS616_30Min_UF_41.dat", "60955.CS616_30Min_UF_42.dat"]
 
         tob3_files = [Path(f"tests/tob3/{name}") for name in tob3_file_names]
         toa5_cc_file_names = [Path(f"tests/toa5-cc/TOA5_{name}") for name in tob3_file_names]
         toa5_c2a_dir = Path("tests/toa5-c2a")
 
 
-        # out_files = c2a(tob3_files, toa5_c2a_dir, pbar=True)
-        out_files = toa5_c2a_dir.glob("*10Hz*.dat")
+        out_files = c2a(tob3_files, toa5_c2a_dir, pbar=True)
+        # out_files = toa5_c2a_dir.glob("*10Hz*.dat")
 
         c2a_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP") for f in out_files]).sort_index()
         cc_data = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3]) for f in toa5_cc_file_names])
@@ -1107,6 +1175,6 @@ if __name__ == "__main__":
 
         print(c2a_data.loc[list(set(c2a_data.index) - set(cc_data.index))[:100]])
 
-        
+
     else:
         raise SystemExit(main(sys.argv[1:]))
