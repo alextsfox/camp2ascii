@@ -17,9 +17,11 @@ from glob import glob
 import sys
 from typing import TYPE_CHECKING
 from pathlib import Path
+import datetime
 
 from .parsingandio import execute_cfg
 from .definitions import Config
+
 
 if TYPE_CHECKING:
     from tqdm import tqdm
@@ -51,6 +53,10 @@ def camp2ascii(
         tob32: bool = False,
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
+        time_interval: datetime.timedelta | None = None,
+        timedate_filenames: bool = False,
+        contiguous_timeseries = False,
+        file_matching_criteria: int = 0,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -71,7 +77,20 @@ def camp2ascii(
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
         store the timestamp of each line as an additional column in the output. Default is True.
-    
+    time_interval: datetime.timedelta | None, optional
+        Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
+        When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
+        Only "matching" files will be spliced together, determined by the file_matching_criteria parameter.
+        This produces a contiguous timeseries where are missing timestamps are filled in with NAN values.
+    timedate_filenames: bool, optional
+        name files based on the first timestamp in file. Default is False. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
+        When enabled, the program will run a second pass after processing all files to rename the output files based on the timestamp of the first record in each file.
+    file_matching_criteria: int, optional
+        criteria for determining which files should be spliced together when time_interval or contiguous_timeseries options are enabled. 
+        Values:
+            0 (default): strict matching. TOA5 headers must match exactly (including table name, program signature, etc.)
+            1: loose matching. Only the variable names, units, and data processing results must match for two files to be spliced together.
+
     Returns
     -------
     list[Path]

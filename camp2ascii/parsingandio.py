@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .definitions import (
-    FrameType, NumericType, PassType, FrameProcessResult, TimedateFileNames, # Enums
+    FrameType, NumericType, PassType, FrameProcessResult, # Enums
     Config, Header, FrameDefinition, CompleteTOB32DataFrame,  # data classes
     # constants
     MAX_LINE, TRUNC_FACTOR, TO_EPOCH,
