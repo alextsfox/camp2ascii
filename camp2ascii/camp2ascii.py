@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
 
+from .restructure import restructure_files
 from .parsingandio import execute_cfg
 from .definitions import Config
 
@@ -54,7 +55,7 @@ def camp2ascii(
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
         time_interval: datetime.timedelta | None = None,
-        timedate_filenames: bool = False,
+        timedate_filenames: int | None = None,
         contiguous_timeseries = False,
         file_matching_criteria: int = 0,
 ) -> list[Path]:
@@ -81,9 +82,10 @@ def camp2ascii(
         Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
         When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
         Only "matching" files will be spliced together, determined by the file_matching_criteria parameter.
-        This produces a contiguous timeseries where are missing timestamps are filled in with NAN values.
-    timedate_filenames: bool, optional
-        name files based on the first timestamp in file. Default is False. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
+        Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
+        The resulting files will lose their original TOA5 headers and contain only the column names from the original files.
+    timedate_filenames: int | None, optional
+        name files based on the first timestamp in file. Default is None. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
         When enabled, the program will run a second pass after processing all files to rename the output files based on the timestamp of the first record in each file.
     file_matching_criteria: int, optional
         criteria for determining which files should be spliced together when time_interval or contiguous_timeseries options are enabled. 
@@ -134,6 +136,9 @@ def camp2ascii(
     cfg.store_timestamp = store_timestamp
 
     output_files = execute_cfg(cfg, cli=False)
+
+    if time_interval is not None or timedate_filenames is not None:
+        output_files = restructure_files(output_files, file_matching_criteria, time_interval, timedate_filenames)
     return output_files
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 _DEBUG = False
 
 class FrameCursor:
+    # TODO: we can use np.frombuffer to parse the entire frame at once instead of parsing field by field
+    # We can then use numpy.lib.recfunctions.structured_to_unstructured to convert the structured array to a regular 2D array for easier processing. This would likely be much faster than parsing field by field in Python.
     """Helper to read typed data from bytes."""
     def __init__(self, data: bytes):
         self.data = data
