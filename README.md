@@ -15,22 +15,13 @@ or, to install without the progress bar dependency:
 pip install camp2ascii
 ```
 
-Alternatively, you can clone the repository (or just the `camp2ascii.py` file) into your working directory.
-
-
 # Usage
 `camp2ascii` can be used as a command line tool or as a python module. 
 
-If you installed `camp2ascii` using `pip`, the following command calls the CLI:
+The following command calls the CLI:
 ```bash
-camp2ascii ./64293_20Hz*.dat -o ./ascii_files -pbar
+camp2ascii -i ./64293_20Hz*.dat -odir ./ascii_files -pbar
 ```
-
-Without, `pip`, you can call
-```bash
-python /path/to/camp2ascii.py ./64293_20Hz*.dat -o ./ascii_files -pbar
-```
-
 
 This will attempt to convert all files matching the glob string `./64293_Metdata*.dat` from TOB (binary) format to TOA5 (ASCII) format, outputting the resulting files to the `./ascii_files` directory. A progress bar will be displayed.
 
