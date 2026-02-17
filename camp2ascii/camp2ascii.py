@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
 
-from .restructure import restructure_files
+# from .restructure import restructure_files
 from .parsingandio import execute_cfg
 from .definitions import Config
 
@@ -137,9 +137,9 @@ def camp2ascii(
 
     output_files = execute_cfg(cfg, cli=False)
 
-    if time_interval is not None or timedate_filenames is not None:
-        output_files = restructure_files(output_files, file_matching_criteria, time_interval, timedate_filenames)
-    return output_files
+    # if time_interval is not None or timedate_filenames is not None:
+    #     output_files = restructure_files(output_files, file_matching_criteria, time_interval, timedate_filenames)
+    # return output_files
 
 if __name__ == "__main__":
     raise SystemExit(0)
