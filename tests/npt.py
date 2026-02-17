@@ -125,6 +125,7 @@ try:
             missing_lines = int(missing_lines)
             mask[(frame+1)*data_nlines - missing_lines:(frame+1)*data_nlines] = True
 
+        # print(header_bytes[:8])
         headers_raw[frame] = header_bytes
         data_raw[frame] = data_bytes
         footers_raw[frame] = footer
@@ -155,19 +156,43 @@ for col, t in enumerate(csci_types):
         data[:, col] = decode_fp2(data[:, col])
 data[mask[:final_frame*data_nlines]] = np.nan
 
-footers = np.array([
-    [foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation]
-    for foot in footers_raw[:final_frame]
-])
+# footers = np.array([
+#     [foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (validation_stamp, int(0xFFFF ^ validation_stamp))]
+#     for foot in footers_raw[:final_frame]
+# ])
 
-headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw[:final_frame]), dtype=header_dtype))
+def parse_timestamp(seconds: int, subseconds: int) -> float:
+    """Convert a Campbell timestamp to Unix epoch (seconds). 
+    
+    Parameters
+    ----------
+    seconds: int
+        the seconds part of the timestamp, relative to the Campbell epoch (Jan 1, 1990)
+    subseconds: int
+        the fractional part of the timestamp, in units of frame_time_resolution (e.g., 100 microseconds)
+        
+    Returns
+    -------
+    float
+        the timestamp in seconds since the Unix epoch (Jan 1, 1970)
+    """
+
+    return float(seconds + TO_EPOCH) + (float(subseconds) * frame_time_resolution)
+
+headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw), dtype=header_dtype))
+
+footers = np.empty((final_frame, 8), dtype=np.float32)
+for i, (foot, head) in enumerate(zip(footers_raw, headers)):
+    timestamp = parse_timestamp(head[0], head[1])
+    record = head[2]
+    footers[i] = np.array([foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (validation_stamp, int(0xFFFF ^ validation_stamp)), timestamp, record], dtype=np.float32)
+    
+    
 
 timestamps = np.empty(final_frame*data_nlines, dtype=np.float64)
 records = np.empty(final_frame*data_nlines, dtype=np.int32)
 for i in range(final_frame):
-    time_offset = headers[i, 0] + TO_EPOCH
-    subseconds = headers[i, 1]
-    beg_timestamp = float(time_offset) + (float(subseconds) * frame_time_resolution)
+    beg_timestamp = parse_timestamp(headers[i, 0], headers[i, 1])
     beg_record = headers[i, 2]
 
     timestamps[i*data_nlines:(i+1)*data_nlines] = np.arange(
@@ -184,9 +209,11 @@ df = pd.DataFrame(
 df.index.rename("TIMESTAMP", inplace=True)
 df = df.sort_index()
 
+# this is the slowest part by far, which is good news I think
 df.to_csv("tests/toa5-c2a/23313_Site4_300Sec5_decoded_numpy.csv", index=True)
 
-print(f"Decoding completed in {timer() - start:.2f} seconds")
+end = timer()
+print(f"Decoding completed in {end - start:.2f} seconds")
 
 sys.path.append("../camp2ascii")
 from camp2ascii import camp2ascii as c2a

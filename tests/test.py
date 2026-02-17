@@ -1,15 +1,12 @@
-import pandas as pd
-import numpy as np
 from pathlib import Path
-
-from camp2ascii import camp2ascii as c2a
-
-
+import sys
+print(Path(__file__).parent.parent)
+sys.path.append(str(Path(__file__).parent.parent))
+from camp2ascii.mymain import main
 if __name__ == "__main__":
-    with open("/Users/alex/Downloads/23313_Site4_300Sec5.dat", "rb") as f:
-        for _ in range(6): f.readline()
-        raw = f.read(904)
+    path = Path("tests/tob3/23313_Site4_300Sec5.dat")
+    # with open("../tests/tob3/23313_Site4_300Sec5_manually_corrupted.dat", "wb") as fout:
+    #     fout.write(input_buff.read(30_000))
+    # path = Path("../tests/tob3/23313_Site4_300Sec5_manually_corrupted.dat")
 
-fields = ["FP2","FP2","FP2","FP2","FP2","FP2","IEEE4B","IEEE4B","IEEE4B","IEEE4B","FP2","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","FP2","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","UINT2","UINT2","UINT2","UINT2","UINT2","UINT2","UINT2","UINT2","UINT2"]
-unique_fields = set(fields)
-print(unique_fields)
+    main(path)
