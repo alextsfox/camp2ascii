@@ -8,7 +8,7 @@ import pandas as pd
 
 from camp2ascii.constants import Footer
 from .typeconversion import (
-    FRAME_HEADER_DTYPE,
+    FRAME_HEADER_DTYPE, FINAL_TYPES,
     create_intermediate_datatype, 
     decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp
 
@@ -141,20 +141,23 @@ def main(path: Path | str):
                 raise NotImplementedError("TOB1 files are not supported.")
             case FileType.TOA5:
                 raise NotImplementedError("TOA5 files are not supported.")
+
     # decode the intermediate data types
-    # TODO: once this gets decoded into float32, we risk really bloating the memory usage if the data contains a lot of 2-byte fields
-    # consider making this into a pandas dataframe so that we can choose datatypes for each column?
-    data = structured_to_unstructured(np.frombuffer(b''.join(data_raw), dtype=intermediate_dtype), dtype=np.float32)
-    for col, t in enumerate(header.csci_dtypes):
+    valid_rows = np.where(~mask)[0]  # get the indices of the valid lines (ie not missing due to minor frames)
+    data = np.frombuffer(b''.join(data_raw), dtype=intermediate_dtype)[valid_rows]
+    df = pd.DataFrame()
+    for i, (name, t, tname) in enumerate(zip(header.names, header.csci_dtypes, intermediate_dtype.names)):
         if t == "FP2":
-            data[:, col] = decode_fp2(data[:, col])
+            col = decode_fp2(data[tname])
         elif t == "FP4":
-            data[:, col] = decode_fp4(data[:, col])
+            col = decode_fp4(data[tname])
         elif t == "NSec":
-            data[:, col] = decode_nsec(data[:, col])
+            col = decode_nsec(data[tname])
         elif t == "SecNano":
-            data[:, col] = decode_secnano(data[:, col])
-    data[mask] = np.nan
+            col = decode_secnano(data[tname])
+        else:
+            col = data[tname]
+        df[name] = col.astype(FINAL_TYPES[t])
 
     # decode the intermediate header and footer outputs
     if header.file_type in (FileType.TOB3, FileType.TOB2):
@@ -178,11 +181,13 @@ def main(path: Path | str):
                 header.rec_intvl*1_000_000_000
             )
             records[i*frame_data_nlines:(i+1)*frame_data_nlines] = np.arange(beg_record, beg_record + frame_data_nlines)
+        records = records[valid_rows]
+        timestamps = timestamps[valid_rows]
 
-    df = pd.DataFrame(
-        np.concatenate((records[:, None], data), axis=1),
-        columns = ["RECORD"] + header.names,
-        index=pd.to_datetime(timestamps, unit='ns')
-    )
-    df.index.rename("TIMESTAMP", inplace=True)
-    df = df.sort_index()
+    df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
+    df["RECORD"] = records
+    df.set_index("TIMESTAMP", inplace=True)
+    df.sort_index(inplace=True)
+
+    df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
+    return df
