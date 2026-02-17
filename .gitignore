@@ -7,8 +7,6 @@ __pycache__
 
 *.stats
 *.log
-test.py
-*.ipynb
 
 publish.txt
 .venv
