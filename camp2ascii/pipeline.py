@@ -71,7 +71,7 @@ def compute_timestamps_and_records(
             beg_record = i*header.data_nlines
         timestamps[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(
             beg_timestamp, 
-            beg_timestamp + header.data_nlines*np.int64(header.rec_intvl)*1_000_000_000, 
+            beg_timestamp + header.data_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
             np.int64(header.rec_intvl)*1_000_000_000,
             dtype=np.int64
         )
