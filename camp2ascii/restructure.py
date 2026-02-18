@@ -5,6 +5,9 @@ import datetime
 
 import pandas as pd
 
+from .formats import Config
+from .output import write_toa5_file
+
 def build_matching_file_dict(files: List[Path], file_matching_criteria: int) -> Dict[str, List[Path]]:
     matching_file_dict = defaultdict(list)
     for fn in files:
@@ -63,7 +66,6 @@ def compute_timedated_filenames(file_list: List[Path], time_interval: datetime.t
                 for _ in range(3):
                     f.readline()
             f.readline()
-            print(f.readline())
             timestamp_str = f.readline().strip(' \n"').split(',')[0].split('.')[0]  # remove milliseconds if present
         timestamp_str = pd.to_datetime(timestamp_str).strftime(r"%Y%m%d%H%M%S") if timedate_filenames == 0 else pd.to_datetime(timestamp_str).strftime(r"%Y%j%H%M%S")
         new_fns.append(fn.with_stem(fn.stem + f"_{timestamp_str}"))
@@ -76,86 +78,71 @@ def make_timeseries_contiguous(df: pd.DataFrame, start_time: datetime.datetime, 
         .loc[start_time:end_time]
     )
 
-def split_files_by_time_interval(file_list, cfg):
+def split_files_by_time_interval(file_list: list[Path | str], cfg: Config) -> list[Path]:
     output_paths = []
-    time_sorted_filenames, sorted_file_start_timestamps = order_files_by_time(file_list)
+    from .pipeline import process_file
+    time_sorted_filenames, _ = order_files_by_time(file_list)
 
-    i = 0
-    remainder_df = None
-    while i < len(time_sorted_filenames):
-        df, header = process_file(time_sorted_filenames[i])
-        if remainder_df is not None:
-            df = pd.concat([remainder_df, df])
-            df.sort_index(inplace=True)
-            remainder_df = None
+    chad = None
+    df, header = process_file(time_sorted_filenames[0])
+    # creating a generator to avoid accounting errors
+    time_sorted_processed_files = (process_file(fn)[0] for fn in time_sorted_filenames[1:])
 
-        start_time = df.index[0].floor(freq=cfg.time_interval)
-        while df.index[-1] - df.index[0] < cfg.time_interval:
-            i += 1
-            if i >= len(time_sorted_filenames):
+    fn_ref = Path(time_sorted_filenames[0])
+    suff = fn_ref.suffix
+    stem = fn_ref.stem
+    out_file_base = cfg.out_dir / ("TOA5_" + stem)
+
+    freq = f"{int(header.rec_intvl*1_000)}ms"
+
+    while df is not None:
+        # if the previous file had any leftover data, prepend it to the current dataframe
+        if chad is not None:
+            df = pd.concat([chad, df])
+            chad = None
+
+        # continually append dataframes until the time interval is exceeded.
+        # a single file may contain multiple time intervals, or less than one time interval.
+        start_time = df.index.min().floor(freq=cfg.time_interval)
+        end_time = df.index.max().floor(freq=cfg.time_interval)
+        while end_time - start_time < cfg.time_interval:
+            next_df = next(time_sorted_processed_files, None)
+            if next_df is None:
                 break
-            next_df, _ = process_file(time_sorted_filenames[i])
+            end_time = next_df.index.max().floor(freq=cfg.time_interval)
             df = pd.concat([df, next_df])
-        end_time = df.index[-1].floor(freq=cfg.time_interval)
-        remainder_df = df.loc[end_time:]
+        df = df.sort_index()
 
-        df = make_timeseries_contiguous(df, start_time, end_time, cfg.time_interval).loc[start_time:end_time]
+        # carry over leftover information to the next iteration
+        chad = df.loc[end_time:]
 
+        # fill dataframe with NANs and trim to the exact time interval
+        if cfg.contiguous_timeseries == 2:
+            df = make_timeseries_contiguous(df, start_time, end_time, freq).loc[start_time:end_time]
+
+        # split dataframe into the requested time intervals and write to disk
         time_intervals = pd.interval_range(start=start_time, end=end_time, freq=cfg.time_interval)
         for interval in time_intervals:
-            interval_df = df.loc[interval[0]:interval[1]]
-            output_path = None # TODO: fill in
+            if cfg.contiguous_timeseries == 1:
+                interval_df = make_timeseries_contiguous(df.loc[interval.left:interval.right], interval.left, interval.right, freq)
+            elif cfg.contiguous_timeseries == 0:
+                interval_df = df.loc[max(interval.left, df.index.min()):min(interval.right, df.index.max())]
+            output_path = out_file_base.with_suffix(f"_{interval.left.strftime(cfg.timedate_filenames)}{suff}")
             output_paths.append(output_path)
             write_toa5_file(interval_df, header, output_path, cfg.store_timestamp, cfg.store_record_numbers)
 
-        i += 1
+        df = next(time_sorted_processed_files, None)
+
+    # save the remaining chad to disk without extending to the next time interval
+    if chad is not None:
+        if cfg.contiguous_timeseries in (1, 2):
+            chad = make_timeseries_contiguous(chad, chad.index.min(), chad.index.max(), freq=freq)
+        output_path = out_file_base.with_suffix(f"_{chad.index.min().strftime(cfg.timedate_filenames)}{suff}")
+        output_paths.append(output_path)
+        write_toa5_file(chad, header, output_path, cfg.store_timestamp, cfg.store_record_numbers)
+
     return output_paths
     
-
-def restructure_files(file_list: List[Path], file_matching_criteria: int, time_interval: datetime.timedelta | None, timedate_filenames: int) -> List[Path]:
-    matching_file_dict = build_matching_file_dict(file_list, file_matching_criteria)
-    for file_type in matching_file_dict:
-        file_list = matching_file_dict[file_type]
-        if time_interval is not None:
-            file_list, file_start_timestamps = order_files_by_time(file_list)
-            time_interval_file_groups, start_times = group_files_by_time_interval(file_list, file_start_timestamps, time_interval)
-            new_file_list = []
-            for i in range(len(time_interval_file_groups)):
-                file_group = time_interval_file_groups[i]
-                df = pd.concat([pd.read_csv(fn, skiprows=[0, 2, 3]) for fn in file_group])
-                df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"], format="ISO8601")
-                df = df.sort_values("TIMESTAMP")
-
-                start_time = start_times[i]
-                end_time = start_time + time_interval
-                
-                df = make_timeseries_contiguous(df, start_time, end_time, freq=df.TIMESTAMP.diff().min())
-                new_file_name = file_group[0].with_stem(file_group[0].stem + "_spliced")
-                df.to_csv(new_file_name, index=False)
-                new_file_list.append(new_file_name)
-            
-            for fn in file_list:
-                fn.unlink()
-            file_list = new_file_list
-
-        if timedate_filenames:
-            new_fns = compute_timedated_filenames(file_list, time_interval, timedate_filenames)
-            for old_fn, new_fn in zip(file_list, new_fns):
-                print(new_fn)
-                old_fn.rename(new_fn)
-    return file_list
-
-if __name__ == "__main__":
-    fns = [
-        Path("tests/toa5-cc/TOA5_60955.CS616_30Min_UF_39.dat"),
-        Path("tests/toa5-cc/TOA5_60955.CS616_30Min_UF_40.dat"),
-        Path("tests/toa5-cc/TOA5_60955.CS616_30Min_UF_41.dat"),
-        Path("tests/toa5-cc/TOA5_60955.CS616_30Min_UF_42.dat"),
-
-    ]
-    restructure_files(fns, file_matching_criteria=0, time_interval=datetime.timedelta(40), timedate_filenames=True)
-            
-
 
 
 

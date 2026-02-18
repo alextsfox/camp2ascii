@@ -18,73 +18,27 @@ import sys
 from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
-from dataclasses import dataclass
 
 import pandas as pd
 
-from camp2ascii.formats import TimeDateFNType
-from camp2ascii.pipeline import process_file
-from camp2ascii.output import write_toa5_file
-from camp2ascii.headers import parse_file_header
+from .pipeline import execute_config
+from .formats import Config
 
-from camp2ascii.restructure import build_matching_file_dict, split_files_by_time_interval
 if TYPE_CHECKING:
-    from tqdm import tqdm
+    from tqdm.std import tqdm
 
-@dataclass(frozen=True, slots=True)
-class Config:
-    input_files: list[Path]
-    out_dir: Path
-    output_files: list[Path]
-    stop_cond: int
-    pbar: bool
-    store_record_numbers: bool
-    store_timestamp: bool
-    timedate_filenames: TimeDateFNType
-    time_interval: datetime.timedelta | None
-    file_matching_criteria: int
-
-def execute_config(cfg: Config) -> list[Path]:
-    # TODO: write this...
-    # TODO: write a function to split the files as requested. Basically, we gather the output of process_file until the length of the file exceeds the requested time interval. Then, we chunk the file up into the requested time intervals (plus a remainder), write the complete dataframes to disk, and move on to the next file, prepending the remainder data to the dataframe of the next file. We can use restructure.build_matching_file_dict and restructure.order_files_by_time to help with this.
-    #     # we can split the files using pd.interval_range
-    
-    for path in cfg.input_files:
-        df, header = process_file(path)
-        write_toa5_file(df, header, cfg.store_timestamp, cfg.store_record_numbers)
-    
-    if cfg.time_interval is not None:
-        matching_file_dict = build_matching_file_dict(cfg.output_files, cfg.file_matching_criteria)
-        for matching_files in matching_file_dict.values():
-            split_files_by_time_interval(matching_files, cfg)
-
-
-    
-
-
-
-
-    return
 
 # TODO: add
 # use_filemarks: bool, optional
 #     Create a new output file when a filemark is found. Default is False.
 # use_removemarks: bool, optional
 #     Create a new output file when a removemark is found. Default is False.
-# time_interval: datetime.timedelta | None, optional
-#     Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
-# convert_only_new_data: bool, optional
-#     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
-# timedate_filenames: int, optional
-#     name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
 # convert_only_new_data: bool, optional
 #     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
 # append_to_last_file: bool, optional
 #     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
 # attempt_to_repair_corrupt_frames: bool, optional
 #     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
-# timedate_filenames: int, optional
-#     name files based on the first timestamp in file. Default is 0 (disabled). 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
@@ -94,8 +48,7 @@ def camp2ascii(
         store_timestamp: bool = True,
         time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
-        contiguous_timeseries = False,
-        file_matching_criteria: int = 0,
+        contiguous_timeseries: int = 0,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -106,35 +59,34 @@ def camp2ascii(
     output_dir : str | Path
         Path to output directory (or file when decoding a single input).
     n_invalid : int | None, optional
-        Stop after encountering N invalid data frames (0=never). Default is None.
+        Stop after encountering N invalid data frames. Default is None (never).
+        If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
+        As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
     pbar : bool, optional
         Show progress bar (requires tqdm). Default is False.
     store_record_numbers: bool, optional
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
         store the timestamp of each line as an additional column in the output. Default is True.
-    time_interval: datetime.timedelta | None, optional
+    time_interval: datetime.timedelta | str | None, optional
         Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
         When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
-        Only "matching" files will be spliced together, determined by the file_matching_criteria parameter.
+        Only files with identical ASCII headers will be matched together.
         Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
-        The resulting files will lose their original TOA5 headers and contain only the column names from the original files.
+        Valid time intervals are datetime.timdelta objects or any valid pandas time frequency string.
     timedate_filenames: int | None, optional
         name files based on the first timestamp in file. Default is None. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
-        When enabled, the program will run a second pass after processing all files to rename the output files based on the timestamp of the first record in each file.
-    file_matching_criteria: int, optional
-        criteria for determining which files should be spliced together when time_interval or contiguous_timeseries options are enabled. 
-        Values:
-            0 (default): strict matching. TOA5 headers must match exactly (including table name, program signature, etc.)
-            1: loose matching. Only the variable names, units, and data processing results must match for two files to be spliced together.
-
+    contiguous_timeseries: int, optional
+        Whether to stitch fill in missing timestamps in the final output files with NANs.
+        0: disabled (default)
+        1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
+        2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
     Returns
     -------
     list[Path]
         List of Paths to the generated output files.
 
     """
-    cfg = Config()
 
     # parse input files (supports glob pattern, directory, or single file)
     if isinstance(input_files, map):
@@ -147,26 +99,72 @@ def camp2ascii(
     if not isinstance(input_files, (list, tuple)):
         input_files = [input_files]
     input_files = [Path(p) for p in input_files]
-    cfg.input_files = input_files
     
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    cfg.out_dir = out_dir
-    cfg.output_files = [Path(output_dir) / p.name for p in cfg.input_files]
 
-    cfg.stop_cond = n_invalid if n_invalid is not None else 0
+    
+    if n_invalid is not None and (not isinstance(n_invalid, int) or n_invalid <= 0):
+        raise ValueError("n_invalid must be a positive integer or None.")
 
     if pbar:
         try:
             import tqdm
-import tempfile
-            cfg.pbar = True
+            total_bytes_to_read = sum(p.stat().st_size for p in input_files)
+            pbar = tqdm(total=total_bytes_to_read, unit="B", unit_scale=True, unit_divisor=1024, desc="Processing files")
         except ImportError:
             sys.stderr.write("*** Warning: tqdm not installed; progress bar disabled.\n")
-            cfg.pbar = False
+            pbar = None
+    elif not pbar:
+        pbar = None
+    else:
+        raise ValueError("Invalid value for pbar. Must be a boolean.")
 
-    cfg.store_record_numbers = store_record_numbers
-    cfg.store_timestamp = store_timestamp
+    match timedate_filenames:
+        case 1:
+            timedate_filenames = r"%Y_%m_%d_%H%M"
+        case 2:
+            timedate_filenames = r"%Y_%j_%H%M"
+        case None:
+            timedate_filenames = None
+        case _:
+            raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
+
+    if time_interval is None and timedate_filenames is not None:
+        raise ValueError("timedate_filenames cannot be used without time_interval.")
+
+    if time_interval is not None:
+        time_interval = pd.Timedelta(time_interval).to_pytimedelta()
+        if time_interval.total_seconds() < 60.0:
+            raise ValueError(f"time_interval must be at least 60 seconds. Got {time_interval.total_seconds()}s.")
+        if time_interval.total_seconds() < 450.0:
+            sys.stderr.write(f" *** Warning: time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.\n")
+            sys.stderr.flush()
+
+    if contiguous_timeseries not in (0, 1, 2):
+        raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")
+    if contiguous_timeseries == 0 and time_interval is not None:
+        sys.stderr.write(" *** Warning: time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.\n")
+        sys.stderr.flush()
+    contiguous_timeseries = contiguous_timeseries
+
+    cfg = Config(
+        input_files=input_files,
+        out_dir=out_dir,
+        stop_cond=n_invalid,
+        pbar=pbar,
+        store_record_numbers=store_record_numbers,
+        store_timestamp=store_timestamp,
+        time_interval=time_interval,
+        timedate_filenames=timedate_filenames,
+        contiguous_timeseries=contiguous_timeseries,
+    )
+
+    final_output_paths = execute_config(cfg)
+
+    return final_output_paths
+    
+
 
 if __name__ == "__main__":
     raise SystemExit(0)

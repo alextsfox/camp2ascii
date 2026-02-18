@@ -1,9 +1,14 @@
-from typing import BinaryIO
+from __future__ import annotations
+
+from typing import BinaryIO, TYPE_CHECKING
 import sys
+
 import numpy as np
 
-from camp2ascii.formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header
+from .formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header
 
+if TYPE_CHECKING:
+    from tqdm.std import tqdm
 
 def parse_footer(footer_bytes: bytes) -> Footer:
     content = int.from_bytes(footer_bytes[-4:], "little", signed=True)
@@ -16,16 +21,18 @@ def parse_footer(footer_bytes: bytes) -> Footer:
         validation = (content >> 16) & 0xFFFF,
     )
 
-def ingest_tob1_data(input_buff: BinaryIO, header: TOB1Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob1_data(input_buff: BinaryIO, header: TOB1Header, ascii_header_nbytes: int, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """TOB1 files do not have frame headers or footers, so we return empty lists for those and read the entire data section as a single block."""
     input_buff.seek(ascii_header_nbytes)
     data_bytes = input_buff.read()
     nlines = len(data_bytes) // header.line_nbytes
     data_bytes = data_bytes[:nlines*header.line_nbytes]  # truncate to a whole number of lines in case of corrupted trailing data
     mask = np.zeros(nlines, dtype=bool)  # no minor frames in TOB1, so no missing lines
+    if pbar is not None:
+        pbar.update(ascii_header_nbytes + len(data_bytes))
     return [], data_bytes, [], mask
 
-def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob3 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames.
     
     Parameters
@@ -36,6 +43,8 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         The parsed header of the TOB file, used to derive constants for parsing the frames
     ascii_header_nbytes: int
         The number of bytes in the ASCII header, used to calculate the position of the first frame in the file
+    n_invalid: int | None
+        Stop after encountering N invalid data frames. Default is None (never).
     
     Returns
     --------
@@ -59,6 +68,7 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
     mask = np.zeros(header.table_nlines_expected, dtype=bool)  # mask by *line* not frame
 
     final_frame = 0
+    skipped_frames = 0
     for frame in range(header.table_nframes_expected):
         # validate the footer before proceeding
         input_buff.seek(frame_header_nbytes + header.data_nbytes, 1)
@@ -67,10 +77,16 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         footer = parse_footer(footer_bytes)
 
         if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)):
+            skipped_frames += 1
+            if n_invalid is not None and skipped_frames >= n_invalid:
+                sys.stderr.write(f" *** Stopping after {skipped_frames} invalid frames (stop_cond={n_invalid}).\n")
+                sys.stderr.flush()
+                break
             if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
                 sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B. Further data in this file will not be processed.\n")
                 sys.stderr.flush()
                 break
+
             continue
 
         # return to beginning of the frame to reader header and data once validation is successful
@@ -101,8 +117,11 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         
         final_frame = frame + 1  # final frame is the last successfully validated one
 
+        if pbar is not None:
+            pbar.update(header.frame_nbytes)
+
     return headers_raw[:final_frame], data_raw[:final_frame], footers_raw[:final_frame], mask[:final_frame*header.data_nlines]
 
-def ingest_tob2_data(input_buff: BinaryIO, header: TOB2Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob2_data(input_buff: BinaryIO, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob2 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames."""
-    return ingest_tob3_data(input_buff, header, ascii_header_nbytes)  # TOB2 and TOB3 have the same frame structure, just different header content
+    return ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)  # TOB2 and TOB3 have the same frame structure, just different header content

@@ -1,10 +1,17 @@
 """Shared constants, enums, and dataclasses used across camp2ascii."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, auto
-from typing import List
+from typing import List, TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from tqdm.std import tqdm
 
 # Numerical constants
 MAX_FIELD = 40  # maximum length of a field name in the ascii header
@@ -23,17 +30,23 @@ FP2_NAN = 7999
 FP4_NAN = 99999
 UINT2_NAN = 65535
 
+@dataclass(frozen=True, slots=True)
+class Config:
+    input_files: list[Path]
+    out_dir: Path
+    stop_cond: int
+    pbar: tqdm | None
+    store_record_numbers: bool
+    store_timestamp: bool
+    timedate_filenames: str | None
+    time_interval: datetime.timedelta | None
+    contiguous_timeseries: int
 
 class FileType(Enum):
     TOB1 = auto()
     TOB2 = auto()
     TOB3 = auto()
     TOA5 = auto()
-
-class TimeDateFNType(Enum):
-    NONE = auto()
-    YMD = auto()
-    YDOY = auto()
 
 # Frame sizing constants keyed by file type
 FRAME_HEADER_NBYTES = {

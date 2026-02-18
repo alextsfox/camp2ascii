@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from camp2ascii.formats import TOA5Header, TOB1Header, TOB2Header, TOB3Header, format_toa5_header
+from .formats import TOA5Header, TOB1Header, TOB2Header, TOB3Header
+from .headers import format_toa5_header
 
 def write_toa5_file(
     df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, 
@@ -49,7 +50,7 @@ def write_toa5_file(
                 df[col] = df[col].map(lambda x: f"{x:.16f}")
             df[col] = df[col].replace("nan", "NAN")
 
-        df.iloc.to_csv(
+        df.to_csv(
             output_buffer, 
             index=False, 
             na_rep="NAN", 

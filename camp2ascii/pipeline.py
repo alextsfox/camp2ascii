@@ -1,16 +1,24 @@
+from __future__ import annotations
+
 from pathlib import Path
-import csv
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import pandas as pd
 
-from camp2ascii.formats import FileType, TOA5Header, TOB3Header, TOB2Header, TOB1Header, TO_EPOCH
-from camp2ascii.decode import (
+from .formats import FileType, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH
+from .decode import (
     FRAME_HEADER_DTYPE, FINAL_TYPES,
     decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp
 )
-from camp2ascii.headers import parse_file_header, format_toa5_header
-from camp2ascii.ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
+from .headers import parse_file_header
+from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
+from .output import write_toa5_file
+from .restructure import build_matching_file_dict, split_files_by_time_interval
+
+if TYPE_CHECKING:
+    from tqdm import tqdm
 
 def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
     # decode the intermediate data types
@@ -65,27 +73,31 @@ def compute_timestamps_and_records(
 
     return timestamps, records, footers
 
-def process_file(path: Path | str) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
+def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
     with open(path, "rb") as input_buff:
         header, ascii_header_nbytes = parse_file_header(input_buff)
         match header.file_type:
             case FileType.TOB3:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob3_data(input_buff, header, ascii_header_nbytes)
+                headers_raw, data_raw, footers_raw, mask = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
                 nframes = len(headers_raw)
                 nlines = mask.shape[0]
             case FileType.TOB2:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob2_data(input_buff, header, ascii_header_nbytes)
+                headers_raw, data_raw, footers_raw, mask = ingest_tob2_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
                 nframes = len(headers_raw)
                 nlines = mask.shape[0]
             case FileType.TOB1:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob1_data(input_buff, header, ascii_header_nbytes)
+                headers_raw, data_raw, footers_raw, mask = ingest_tob1_data(input_buff, header, ascii_header_nbytes, pbar)
             case FileType.TOA5:  # TOA5 files are already in ASCII...we just read them in and return them as a dataframe
                 df = pd.read_csv(input_buff, skiprows=[0, 2, 3], na_values=["NAN", "NaN", "nan", "-9999"])
                 if "TIMESTAMP" in df.columns:
                     df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"], format="ISO8601")
                     df.set_index("TIMESTAMP", inplace=True)
+                    if pbar is not None:
+                        pbar.update(path.stat().st_size)
                     return df, header
+        if pbar is not None:
+            pbar.update(path.stat().st_size - input_buff.tell())
 
     valid_rows = np.where(~mask)[0]
     df = data_to_pandas(valid_rows, data_raw, header)
@@ -106,3 +118,26 @@ def process_file(path: Path | str) -> tuple[pd.DataFrame, TOA5Header | TOB1Heade
 
     df.sort_index(inplace=True)
     return df, header
+
+def execute_config(cfg: Config) -> list[Path]:
+    output_paths = []
+    for path in cfg.input_files:
+        df, header = process_file(path, cfg.stop_cond, pbar=cfg.pbar)
+        if cfg.timedate_filenames is not None and df.index.name == "TIMESTAMP":
+            out_path = Path(cfg.out_dir) / ("TOA5_" + path.stem + "_" + df.index.min().strftime(cfg.timedate_filenames) + path.suffix)
+        else:
+            out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
+        output_paths.append(out_path)
+        write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+    
+    if cfg.time_interval is not None:
+        output_paths_2 = []
+        matching_file_dict = build_matching_file_dict(output_paths, cfg.file_matching_criteria)
+        for matching_files in matching_file_dict.values():
+            output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
+        for path in output_paths:
+            if path not in output_paths_2:
+                path.unlink()
+        output_paths = output_paths_2
+
+    return output_paths

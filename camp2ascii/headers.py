@@ -6,7 +6,7 @@ from math import ceil
 import sys
 from typing import BinaryIO, List
 
-from camp2ascii.formats import (
+from .formats import (
     MAX_FIELD,
     MAX_FORMAT,
     NB_MAX_FIELDS,
@@ -23,7 +23,7 @@ from camp2ascii.formats import (
     FP2_NAN,
     FP4_NAN,
 )
-from camp2ascii.decode import create_intermediate_datatype
+from .decode import create_intermediate_datatype
 
 def validate_fields(names, units, processing, csci_dtypes):
     if not (len(names) == len(units) == len(processing) == len(csci_dtypes)):
