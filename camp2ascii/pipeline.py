@@ -80,7 +80,7 @@ def compute_timestamps_and_records(
 def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
     with open(path, "rb") as input_buff:
-        header, ascii_header_nbytes = parse_file_header(input_buff)
+        header, ascii_header_nbytes = parse_file_header(input_buff, path)
         match header.file_type:
             case FileType.TOB3:
                 headers_raw, data_raw, footers_raw, mask = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
@@ -132,11 +132,11 @@ def execute_config(cfg: Config) -> list[Path]:
         else:
             out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
         output_paths.append(out_path)
-        write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+        out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
     
     if cfg.time_interval is not None:
         output_paths_2 = []
-        matching_file_dict = build_matching_file_dict(output_paths, cfg.file_matching_criteria)
+        matching_file_dict = build_matching_file_dict(output_paths)
         for matching_files in matching_file_dict.values():
             output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
         for path in output_paths:

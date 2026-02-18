@@ -16,8 +16,7 @@ build/
 *.egg-info/
 
 parsed
-# *.csv
-# *.dat
-*Identifier
-*10Hz*
-*5Min*
+*.dat
+tests/c2a-*
+tests/cc-*
+tests/raw*

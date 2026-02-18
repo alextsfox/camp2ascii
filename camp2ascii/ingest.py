@@ -79,11 +79,11 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)):
             skipped_frames += 1
             if n_invalid is not None and skipped_frames >= n_invalid:
-                sys.stderr.write(f" *** Stopping after {skipped_frames} invalid frames (stop_cond={n_invalid}).\n")
+                sys.stderr.write(f" *** Stopping after {skipped_frames} invalid frames (stop_cond={n_invalid}) in {header.path.relative_to(header.path.parent.parent)}.\n")
                 sys.stderr.flush()
                 break
             if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
-                sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B. Further data in this file will not be processed.\n")
+                sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
                 sys.stderr.flush()
                 break
 
@@ -97,7 +97,7 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
 
         input_buff.seek(FRAME_FOOTER_NBYTES, 1)  # seek past the footer to the next frame
         if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
-            sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B. Further data in this file will not be processed.\n")
+            sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
             sys.stderr.flush()
             break
             
@@ -105,7 +105,7 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         if footer.minor_frame:
             missing_lines = footer.offset/header.line_nbytes
             if missing_lines % 1 != 0:
-                sys.stderr.write(f" *** Warning: corrupt frame with non-integer number of missing lines ({missing_lines}) encountered at position {input_buff.tell()}B. Further data in this file will not be processed.\n")
+                sys.stderr.write(f" *** Warning: corrupt frame with non-integer number of missing lines ({missing_lines}) encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
                 sys.stderr.flush()
                 break
             missing_lines = int(missing_lines)

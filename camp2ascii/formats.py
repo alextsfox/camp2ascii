@@ -88,6 +88,7 @@ class TOB3Header:
     table_nframes_expected: int
     fp2_nan: int
     fp4_nan: int
+    path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,10 +110,12 @@ class TOB1Header:
     units: List[str]
     processing: List[str]
     csci_dtypes: List[str]
+    # derived fields
     intermediate_dtype: np.dtype
     line_nbytes: int
     fp2_nan: int
     fp4_nan: int
+    path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +131,8 @@ class TOA5Header:
     names: List[str]
     units: List[str]
     processing: List[str]
+    # derived fields
+    path: Path
 
 
 @dataclass(frozen=True, slots=True)

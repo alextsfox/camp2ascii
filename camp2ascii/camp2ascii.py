@@ -127,6 +127,8 @@ def camp2ascii(
             timedate_filenames = r"%Y_%j_%H%M"
         case None:
             timedate_filenames = None
+        case 0:
+            timedate_filenames = None
         case _:
             raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
 

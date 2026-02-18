@@ -3,6 +3,7 @@
 import csv
 from dataclasses import asdict
 from math import ceil
+from pathlib import Path
 import sys
 from typing import BinaryIO, List
 
@@ -25,13 +26,13 @@ from .formats import (
 )
 from .decode import create_intermediate_datatype
 
-def validate_fields(names, units, processing, csci_dtypes):
+def validate_fields(names, units, processing, csci_dtypes, path: Path):
     if not (len(names) == len(units) == len(processing) == len(csci_dtypes)):
-        sys.stderr.write(" *** Corrupt file: The number of columns is not consistent\n")
+        sys.stderr.write(f" *** Corrupt file: The number of columns is not consistent in {path.relative_to(path.parent.parent)}\n")
         sys.stderr.flush()
         raise ValueError("Inconsistent number of columns in header lines")
     if len(names) > NB_MAX_FIELDS:
-        sys.stderr.write(f" *** Warning: Number of columns ({len(names)}) exceeds maximum expected ({NB_MAX_FIELDS}). The header may be corrupt. Number of columns will be truncated to {NB_MAX_FIELDS}. Change formats.NB_MAX_FIELDS to increase the limit.\n")
+        sys.stderr.write(f" *** Warning: Number of columns ({len(names)}) exceeds maximum expected ({NB_MAX_FIELDS}) in {path.relative_to(path.parent.parent)}. The header may be corrupt. Number of columns will be truncated to {NB_MAX_FIELDS}. Change formats.NB_MAX_FIELDS to increase the limit.\n")
         sys.stderr.flush()
         names = names[:NB_MAX_FIELDS]
         units = units[:NB_MAX_FIELDS]
@@ -40,11 +41,11 @@ def validate_fields(names, units, processing, csci_dtypes):
     for i, name in enumerate(names):
         if len(name) > MAX_FIELD:
             names[i] = f"{i}_{name[-MAX_FIELD:]}"
-            sys.stderr.write(f" *** Warning: Column name '{name}' exceeds maximum length ({MAX_FIELD}). The header may be corrupt. Column name will be truncated to '{names[i]}'. Change formats.MAX_FIELD to increase the limit.\n")
+            sys.stderr.write(f" *** Warning: Column name '{name}' exceeds maximum length ({MAX_FIELD}) in {path.relative_to(path.parent.parent)}. The header may be corrupt. Column name will be truncated to '{names[i]}'. Change formats.MAX_FIELD to increase the limit.\n")
             sys.stderr.flush()
     return names, units, processing, csci_dtypes
 
-def parse_tob3_header(header: List[str]) -> TOB3Header:
+def parse_tob3_header(header: List[str], path: Path) -> TOB3Header:
     """Parse a TOB3 header from a list of strings and return a TOB3Header object."""
     reader = csv.reader(header, delimiter=",", quotechar='"')
 
@@ -112,7 +113,7 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
     processing = [p.strip() for p in next(reader)]
     csci_dtypes = [d.strip().upper() for d in next(reader)]
 
-    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes)
+    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes, path)
 
     for t in csci_dtypes:
         if t not in VALID_CSTYPES and 'ASCII' not in t:
@@ -159,13 +160,14 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
         data_nlines=data_nlines,
         table_nframes_expected=table_nframes_expected,
         fp2_nan=fp2_nan,
-        fp4_nan=fp4_nan
+        fp4_nan=fp4_nan,
+        path=path
     )
 
-def parse_tob2_header(header: List[str]) -> TOB2Header:
+def parse_tob2_header(header: List[str], path: Path) -> TOB2Header:
     """Parse a TOB2 header from a list of strings and return a TOB2Header object."""
-    return TOB2Header(**asdict(parse_tob3_header(header)))  # header is identical to TOB3 except for the file type field
-def parse_tob1_header(header: List[str]) -> TOB1Header:
+    return TOB2Header(**asdict(parse_tob3_header(header, path)))  # header is identical to TOB3 except for the file type field
+def parse_tob1_header(header: List[str], path: Path) -> TOB1Header:
     """Parse a TOB1 header from a list of strings and return a TOB1Header object."""
     reader = csv.reader(header, delimiter=",", quotechar='"')
 
@@ -193,7 +195,7 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
     if line_nbytes > MAX_LINE:
         raise ValueError(f"Line size ({line_nbytes} bytes) exceeds maximum expected ({MAX_LINE} bytes). The header may be corrupt. Change formats.MAX_LINE to increase the limit.")
 
-    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes)
+    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes, path)
 
     fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
     fp4_nan = FP4_NAN
@@ -215,9 +217,10 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
         line_nbytes = line_nbytes,
         fp2_nan=fp2_nan,
         fp4_nan=fp4_nan,
+        path=path
     )
 
-def parse_toa5_header(header: List[str]) -> TOA5Header:
+def parse_toa5_header(header: List[str], path: Path) -> TOA5Header:
     """Parse a TOA5 header from a list of strings and return a TOA5Header object."""
     reader = csv.reader(header, delimiter=",", quotechar='"')
 
@@ -251,11 +254,12 @@ def parse_toa5_header(header: List[str]) -> TOA5Header:
         names=names,
         units=units,
         processing=processing,
+        path=path
     )
 
 def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, include_timestamp: bool, include_record: bool) -> str:
     """Format a header object as a list of strings representing a raw TOA5 header."""
-    line_1 = f'"{header.file_type.name}","{header.station_name}","{header.logger_model}","{header.logger_sn}","{header.logger_os}","{header.logger_program}","{header.logger_program_signature}","{header.table_name}"'
+    line_1 = f'"TOA5","{header.station_name}","{header.logger_model}","{header.logger_sn}","{header.logger_os}","{header.logger_program}","{header.logger_program_signature}","{header.table_name}"'
     line_2 = ",".join(f'"{name}"' for name in header.names)
     line_3 = ",".join(f'"{unit}"' for unit in header.units)
     line_4 = ",".join(f'"{proc}"' for proc in header.processing)
@@ -275,7 +279,7 @@ def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header
         line_4 + '\n'
     )
 
-def parse_file_header(buff: BinaryIO) -> tuple[TOB3Header | TOB2Header | TOB1Header | TOA5Header, int]:
+def parse_file_header(buff: BinaryIO, path: Path) -> tuple[TOB3Header | TOB2Header | TOB1Header | TOA5Header, int]:
     """Parse the header of a TOB or TOA5 file and return a header object, along with the number of bytes read from the file."""
     file_type = FileType[buff.read(6).decode("ascii", errors="ignore").strip('"')]
     buff.seek(0)
@@ -283,16 +287,16 @@ def parse_file_header(buff: BinaryIO) -> tuple[TOB3Header | TOB2Header | TOB1Hea
     match file_type:
         case FileType.TOB3:
             header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(6)]
-            header = parse_tob3_header(header_bytes)
+            header = parse_tob3_header(header_bytes, path)
         case FileType.TOB2:
             header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(6)]
-            header = parse_tob2_header(header_bytes)
+            header = parse_tob2_header(header_bytes, path)
         case FileType.TOB1:
             header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(5)]
-            header = parse_tob1_header(header_bytes)
+            header = parse_tob1_header(header_bytes, path)
         case FileType.TOA5:
             header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(4)]
-            header = parse_toa5_header(header_bytes)
+            header = parse_toa5_header(header_bytes, path)
 
     ascii_header_nbytes = buff.tell()
     buff.seek(0)  # reset file pointer to beginning of file after reading header

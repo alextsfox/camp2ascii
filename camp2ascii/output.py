@@ -25,8 +25,7 @@ def write_toa5_file(
     with open(output_path, "w") as output_buffer:
         output_buffer.write(ascii_header)
         if df.index.name == "TIMESTAMP":
-            df.reset_index(inplace=True)
-            df.rename(columns={"index": "TIMESTAMP"}, inplace=True)
+            df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
             df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
             split_ts = df["TIMESTAMP"].str.split(".")
             df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
@@ -37,14 +36,13 @@ def write_toa5_file(
             df.drop(columns="RECORD", inplace=True)
 
         for col in df.select_dtypes('object'):
-            df[col] = '"' + df[col] + '"'
+            df.loc[:, col] = '"' + df[col] + '"'
 
         for col in df.select_dtypes('float'):
             if header.file_type != FileType.TOA5:
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "FP2":
                     df[col] = df[col].map(lambda x: f"{x:.4f}")
-                    print(df[col])
                 if csci_dtype in ["IEEE4", "IEEE4B"]:
                     df[col] = df[col].map(lambda x: f"{x:.8f}")
                 if csci_dtype in ["IEEE8", "IEEE8B", "FP4"]:

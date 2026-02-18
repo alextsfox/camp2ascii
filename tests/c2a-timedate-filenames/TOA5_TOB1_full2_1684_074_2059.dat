@@ -1,4 +1,4 @@
-"TOB1","64291","CR1000X","64291","CR1000X.Std.08.01","CPU:test_suite.cr1x","52692","TOB1_Full"
+"TOA5","64291","CR1000X","64291","CR1000X.Std.08.01","CPU:test_suite.cr1x","52692","TOB1_Full"
 "TIMESTAMP","RECORD","SECONDS","NANOSECONDS","RECORD","temp_Avg(1)","temp_Avg(2)","temp_Avg(3)","temp_Max(1)","temp_TMx(1)","temp(1)","temp(2)","temp(3)","temp(4)","temp(5)","text_val","toggle","temp_bool8(1)","temp_bool8(2)","temp(8)","temp_nsec(1)"
 "TS",""RN",""SECONDS","NANOSECONDS","RN","degC","degC","degC","degC","degC","degC","degC","degC","degC","degC","","","unitless","unitless","degC",""
 "","","","","","Avg","Avg","Avg","Max","TMx","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp"
