@@ -2,18 +2,23 @@
 
 import csv
 from dataclasses import asdict
+from math import ceil
 from typing import BinaryIO, List
 
 from camp2ascii.constants import (
     FileType,
+    CR10_FP2_NAN,
     FRAME_FOOTER_NBYTES,
     FRAME_HEADER_NBYTES,
+    FP2_NAN,
+    FP4_NAN,
     TOA5Header,
     TOB1Header,
     TOB2Header,
     TOB3Header,
     VALID_CSTYPES,
 )
+from camp2ascii.typeconversion import create_intermediate_datatype
 
 def parse_tob3_header(header: List[str]) -> TOB3Header:
     """Parse a TOB3 header from a list of strings and return a TOB3Header object."""
@@ -86,6 +91,15 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
         if t not in VALID_CSTYPES and 'ASCII' not in t:
             raise ValueError(f"Invalid data type in header: {t}")
 
+    data_nbytes = frame_nbytes - FRAME_HEADER_NBYTES[file_type] - FRAME_FOOTER_NBYTES
+    intermediate_dtype = create_intermediate_datatype(csci_dtypes)
+    line_nbytes = intermediate_dtype.itemsize
+    data_nlines = data_nbytes // line_nbytes
+    table_nframes_expected = ceil(table_nlines_expected / data_nlines)
+
+    fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
+    fp4_nan = FP4_NAN
+
     return TOB3Header(
         file_type=file_type,
         station_name=station_name.strip(),
@@ -107,7 +121,14 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
         names=names,
         units=units,
         processing=processing,
-        csci_dtypes=csci_dtypes
+        csci_dtypes=csci_dtypes,
+        data_nbytes=data_nbytes,
+        intermediate_dtype=intermediate_dtype,
+        line_nbytes=line_nbytes,
+        data_nlines=data_nlines,
+        table_nframes_expected=table_nframes_expected,
+        fp2_nan=fp2_nan,
+        fp4_nan=fp4_nan
     )
 
 def parse_tob2_header(header: List[str]) -> TOB2Header:
@@ -136,6 +157,9 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
     processing = next(reader)
     csci_dtypes = [d.strip().upper() for d in next(reader)]
 
+    fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
+    fp4_nan = FP4_NAN
+
     return TOB1Header(
         file_type=file_type,
         station_name=station_name.strip(),
@@ -148,7 +172,9 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
         names=names,
         units=units,
         processing=processing,
-        csci_dtypes=csci_dtypes
+        csci_dtypes=csci_dtypes,
+        fp2_nan=fp2_nan,
+        fp4_nan=fp4_nan
     )
 
 def parse_toa5_header(header: List[str]) -> TOA5Header:

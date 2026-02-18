@@ -19,10 +19,6 @@ from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
 
-# from .restructure import restructure_files
-from .parsingandio import execute_cfg
-from .definitions import Config
-
 
 if TYPE_CHECKING:
     from tqdm import tqdm

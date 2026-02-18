@@ -1,5 +1,5 @@
 import numpy as np
-from .constants import FileType, TO_EPOCH
+from .constants import FP2_NAN, FP4_NAN, FileType, TO_EPOCH
 
 # class CSType(Enum):
 #     IEEE4 = auto()
@@ -79,24 +79,29 @@ def decode_nsec(nsec: np.int64) -> np.int64:
     """Parse a NSec timestamp into a Unix timestamp in nanoseconds."""
     return decode_secnano(nsec)  # NSec and SecNano differ only in their endianness
 
-def decode_fp2(fp2: np.uint16) -> np.float32:
+def decode_fp2(fp2: np.uint16, fp2_nan=FP2_NAN) -> np.float32:
     fp2 = fp2.astype(np.uint16, copy=False)
     sign = (fp2 >> 15) & 0x1
     exponent = (fp2 >> 13) & 0x3
     mantissa = fp2 & 0x1FFF
     # Campbell FP2 NaN encodings
-    is_nan = ((exponent == 0) & (mantissa == 8191)) | ((sign == 1) & (exponent == 0) & (mantissa == 8190))
     result = ((-1.0) ** sign) * (10.0 ** (-exponent.astype(np.float32))) * mantissa.astype(np.float32)
+    is_nan = (
+        ((exponent == 0) & (mantissa == 8191)) | 
+        ((sign == 1) & (exponent == 0) & (mantissa == 8190)) | 
+        (np.abs(result) >= fp2_nan)
+    )
     result = np.where(is_nan, np.nan, result).astype(np.float32)
+
     return result
 
-def decode_fp4(fp4: np.uint32) -> np.float64:
-    # TODO: does this work? what does a base-2 exponent mean?
-    # single sign bit, seven-bit base-2 exponent, 24-bit mantissa
-    sign = (fp4 >> 31) & 0x1
-    exponent = (fp4 >> 24) & 0x7F
-    mantissa = fp4 & 0xFFFFFF
-    result = ((-1.0) ** sign) * (2.0 ** (exponent.astype(np.float64) - 64)) * (mantissa.astype(np.float64) / (2**24))
+def decode_fp4(fp4: np.uint32, fp4_nan=FP4_NAN) -> np.float64:
+    # taken directly from Mathias Bavay's camp2ascii: "in progress... but it should work! see Appendix C of CR10X manual"
+    sign = ((0x80000000 & fp4) >> 31)
+    exponent = ((0x7F000000 & fp4) >> 24)
+    mantissa = ((0x00FFFFFF & fp4)).astype(np.float64)
+    result = (-1)**sign * mantissa.astype(np.float64)/16777216.0*(2.0**(exponent.astype(np.float64)-64))
+    result = np.where(np.abs(result) >= fp4_nan, np.nan, result)
     return result
 
 def decode_frame_header_timestamp(seconds: np.int32, subseconds: np.int32, frame_time_resolution: float) -> np.int64:
