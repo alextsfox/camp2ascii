@@ -3,9 +3,14 @@
 import csv
 from dataclasses import asdict
 from math import ceil
+import sys
 from typing import BinaryIO, List
 
 from camp2ascii.formats import (
+    MAX_FIELD,
+    MAX_FORMAT,
+    NB_MAX_FIELDS,
+    MAX_LINE,
     FileType,
     FRAME_FOOTER_NBYTES,
     FRAME_HEADER_NBYTES,
@@ -19,6 +24,25 @@ from camp2ascii.formats import (
     FP4_NAN,
 )
 from camp2ascii.decode import create_intermediate_datatype
+
+def validate_fields(names, units, processing, csci_dtypes):
+    if not (len(names) == len(units) == len(processing) == len(csci_dtypes)):
+        sys.stderr.write(" *** Corrupt file: The number of columns is not consistent\n")
+        sys.stderr.flush()
+        raise ValueError("Inconsistent number of columns in header lines")
+    if len(names) > NB_MAX_FIELDS:
+        sys.stderr.write(f" *** Warning: Number of columns ({len(names)}) exceeds maximum expected ({NB_MAX_FIELDS}). The header may be corrupt. Number of columns will be truncated to {NB_MAX_FIELDS}. Change formats.NB_MAX_FIELDS to increase the limit.\n")
+        sys.stderr.flush()
+        names = names[:NB_MAX_FIELDS]
+        units = units[:NB_MAX_FIELDS]
+        processing = processing[:NB_MAX_FIELDS]
+        csci_dtypes = csci_dtypes[:NB_MAX_FIELDS]
+    for i, name in enumerate(names):
+        if len(name) > MAX_FIELD:
+            names[i] = f"{i}_{name[-MAX_FIELD:]}"
+            sys.stderr.write(f" *** Warning: Column name '{name}' exceeds maximum length ({MAX_FIELD}). The header may be corrupt. Column name will be truncated to '{names[i]}'. Change formats.MAX_FIELD to increase the limit.\n")
+            sys.stderr.flush()
+    return names, units, processing, csci_dtypes
 
 def parse_tob3_header(header: List[str]) -> TOB3Header:
     """Parse a TOB3 header from a list of strings and return a TOB3Header object."""
@@ -87,6 +111,9 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
     units = [u.strip() for u in next(reader)]
     processing = [p.strip() for p in next(reader)]
     csci_dtypes = [d.strip().upper() for d in next(reader)]
+
+    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes)
+
     for t in csci_dtypes:
         if t not in VALID_CSTYPES and 'ASCII' not in t:
             raise ValueError(f"Invalid data type in header: {t}")
@@ -94,7 +121,11 @@ def parse_tob3_header(header: List[str]) -> TOB3Header:
     data_nbytes = frame_nbytes - FRAME_HEADER_NBYTES[file_type] - FRAME_FOOTER_NBYTES
     intermediate_dtype = create_intermediate_datatype(csci_dtypes)
     line_nbytes = intermediate_dtype.itemsize
+    if line_nbytes > MAX_LINE:
+        raise ValueError(f"Line size ({line_nbytes} bytes) exceeds maximum expected ({MAX_LINE} bytes). The header may be corrupt. Change formats.MAX_LINE to increase the limit.")
     data_nlines = data_nbytes // line_nbytes
+    if data_nlines > MAX_FORMAT:
+        raise ValueError(f"Number of lines per frame ({data_nlines}) exceeds maximum expected ({MAX_FORMAT}). The header may be corrupt. Change formats.MAX_FORMAT to increase the limit.")
     table_nframes_expected = ceil(table_nlines_expected / data_nlines)
 
     fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
@@ -157,6 +188,16 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
     processing = next(reader)
     csci_dtypes = [d.strip().upper() for d in next(reader)]
 
+    intermediate_dtype = create_intermediate_datatype(csci_dtypes)  # validate the cstypes and compute the intermediate dtype for later use
+    line_nbytes = intermediate_dtype.itemsize
+    if line_nbytes > MAX_LINE:
+        raise ValueError(f"Line size ({line_nbytes} bytes) exceeds maximum expected ({MAX_LINE} bytes). The header may be corrupt. Change formats.MAX_LINE to increase the limit.")
+
+    names, units, processing, csci_dtypes = validate_fields(names, units, processing, csci_dtypes)
+
+    fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
+    fp4_nan = FP4_NAN
+
     return TOB1Header(
         file_type=file_type,
         station_name=station_name.strip(),
@@ -169,7 +210,11 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
         names=names,
         units=units,
         processing=processing,
-        csci_dtypes=csci_dtypes
+        csci_dtypes=csci_dtypes,
+        intermediate_dtype=intermediate_dtype,
+        line_nbytes = line_nbytes,
+        fp2_nan=fp2_nan,
+        fp4_nan=fp4_nan,
     )
 
 def parse_toa5_header(header: List[str]) -> TOA5Header:
@@ -208,14 +253,27 @@ def parse_toa5_header(header: List[str]) -> TOA5Header:
         processing=processing,
     )
 
-def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header) -> List[str]:
+def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, include_timestamp: bool, include_record: bool) -> str:
     """Format a header object as a list of strings representing a raw TOA5 header."""
-    return [
-        f'"{header.file_type.name}","{header.station_name}","{header.logger_model}","{header.logger_sn}","{header.logger_os}","{header.logger_program}","{header.logger_program_signature}","{header.table_name}"',
-        ",".join(f'"{name}"' for name in header.names),
-        ",".join(f'"{unit}"' for unit in header.units),
-        ",".join(f'"{proc}"' for proc in header.processing)
-    ]
+    line_1 = f'"{header.file_type.name}","{header.station_name}","{header.logger_model}","{header.logger_sn}","{header.logger_os}","{header.logger_program}","{header.logger_program_signature}","{header.table_name}"'
+    line_2 = ",".join(f'"{name}"' for name in header.names)
+    line_3 = ",".join(f'"{unit}"' for unit in header.units)
+    line_4 = ",".join(f'"{proc}"' for proc in header.processing)
+    if include_record:
+        line_2 = '"RECORD",' + line_2
+        line_3 = '"RN","' + line_3
+        line_4 = '"",' + line_4
+    if include_timestamp:
+        line_2 = '"TIMESTAMP",' + line_2
+        line_3 = '"TS","' + line_3
+        line_4 = '"",' + line_4
+    
+    return (
+        line_1 + "\n" +
+        line_2 + '\n' +
+        line_3 + '\n' +
+        line_4 + '\n'
+    )
 
 def parse_file_header(buff: BinaryIO) -> tuple[TOB3Header | TOB2Header | TOB1Header | TOA5Header, int]:
     """Parse the header of a TOB or TOA5 file and return a header object, along with the number of bytes read from the file."""
@@ -224,38 +282,19 @@ def parse_file_header(buff: BinaryIO) -> tuple[TOB3Header | TOB2Header | TOB1Hea
 
     match file_type:
         case FileType.TOB3:
-            header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(6)]
+            header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(6)]
             header = parse_tob3_header(header_bytes)
         case FileType.TOB2:
-            header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(6)]
+            header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(6)]
             header = parse_tob2_header(header_bytes)
         case FileType.TOB1:
-            header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(5)]
+            header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(5)]
             header = parse_tob1_header(header_bytes)
         case FileType.TOA5:
-            header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(4)]
+            header_bytes = [buff.readline(MAX_LINE).decode("ascii", errors="ignore") for _ in range(4)]
             header = parse_toa5_header(header_bytes)
 
     ascii_header_nbytes = buff.tell()
     buff.seek(0)  # reset file pointer to beginning of file after reading header
 
     return header, ascii_header_nbytes
-
-if __name__ == "__main__":
-    with open("/home/alextsfox/git-repos/camp2ascii/tests/tob3/23313_Site4_300Sec5_manually_corrupted.dat", "rb") as buff:
-        file_type = FileType[buff.read(6).decode("ascii", errors="ignore").strip('"')]
-        buff.seek(0)
-
-        match file_type:
-            case FileType.TOB3:
-                header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(6)]
-                header = parse_tob3_header(header_bytes)
-            case FileType.TOB2:
-                header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(6)]
-                header = parse_tob2_header(header_bytes)
-            case FileType.TOB1:
-                header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(5)]
-                header = parse_tob1_header(header_bytes)
-            case FileType.TOA5:
-                header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(4)]
-                header = parse_toa5_header(header_bytes)

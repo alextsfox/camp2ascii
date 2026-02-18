@@ -7,17 +7,11 @@ from typing import List
 import numpy as np
 
 # Numerical constants
-MAX_FIELD = 40  # maximum length of a field in header lines
+MAX_FIELD = 40  # maximum length of a field name in the ascii header
 NB_MAX_FIELDS = 200  # maximum number of fields in a frame
 MAX_LINE = 2048  # maximum length of a header line in bytes
-TO_EPOCH = 631_152_000  # seconds between Unix epoch and Campbell epoch
 MAX_FORMAT = 40  # maximum number of data lines in a frame
-CR10_FP2_NAN = 6999  #  NAN for FP2 on the CR10 logger
-CR10_FP4_NAN = 99999  # NAN for FP4 on the CR10 logger
-CR1000_FP2_NAN = 7999  # NAN for FP2 on the CR1000 logger?
-CR1000_FP4_NAN = 99999  # NAN for FP2 on the CR1000 logger?
-FP2_NAN = 7999  #  NAN for FP2 on other loggers
-FP4_NAN = 99999  # NAN for FP4 on other loggers
+TO_EPOCH = 631_152_000  # seconds between Unix epoch and Campbell epoch
 UINT2_NAN = 65535  # NAN for UINT2 on all loggers
 TRUNC_FACTOR = 1.00001
 TM_Y0 = 1900  # Campbell epoch year
@@ -98,6 +92,10 @@ class TOB1Header:
     units: List[str]
     processing: List[str]
     csci_dtypes: List[str]
+    intermediate_dtype: np.dtype
+    line_nbytes: int
+    fp2_nan: int
+    fp4_nan: int
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,7 +2,7 @@ from typing import BinaryIO
 import sys
 import numpy as np
 
-from camp2ascii.formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header
+from camp2ascii.formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header
 
 
 def parse_footer(footer_bytes: bytes) -> Footer:
@@ -15,6 +15,15 @@ def parse_footer(footer_bytes: bytes) -> Footer:
         minor_frame = bool((content >> 14) & 0x1),
         validation = (content >> 16) & 0xFFFF,
     )
+
+def ingest_tob1_data(input_buff: BinaryIO, header: TOB1Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+    """TOB1 files do not have frame headers or footers, so we return empty lists for those and read the entire data section as a single block."""
+    input_buff.seek(ascii_header_nbytes)
+    data_bytes = input_buff.read()
+    nlines = len(data_bytes) // header.line_nbytes
+    data_bytes = data_bytes[:nlines*header.line_nbytes]  # truncate to a whole number of lines in case of corrupted trailing data
+    mask = np.zeros(nlines, dtype=bool)  # no minor frames in TOB1, so no missing lines
+    return [], data_bytes, [], mask
 
 def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob3 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames.
