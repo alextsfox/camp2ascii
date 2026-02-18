@@ -18,10 +18,53 @@ import sys
 from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
+from dataclasses import dataclass
 
+import pandas as pd
 
+from camp2ascii.formats import TimeDateFNType
+from camp2ascii.pipeline import process_file
+from camp2ascii.output import write_toa5_file
+from camp2ascii.headers import parse_file_header
+
+from camp2ascii.restructure import build_matching_file_dict, split_files_by_time_interval
 if TYPE_CHECKING:
     from tqdm import tqdm
+
+@dataclass(frozen=True, slots=True)
+class Config:
+    input_files: list[Path]
+    out_dir: Path
+    output_files: list[Path]
+    stop_cond: int
+    pbar: bool
+    store_record_numbers: bool
+    store_timestamp: bool
+    timedate_filenames: TimeDateFNType
+    time_interval: datetime.timedelta | None
+    file_matching_criteria: int
+
+def execute_config(cfg: Config) -> list[Path]:
+    # TODO: write this...
+    # TODO: write a function to split the files as requested. Basically, we gather the output of process_file until the length of the file exceeds the requested time interval. Then, we chunk the file up into the requested time intervals (plus a remainder), write the complete dataframes to disk, and move on to the next file, prepending the remainder data to the dataframe of the next file. We can use restructure.build_matching_file_dict and restructure.order_files_by_time to help with this.
+    #     # we can split the files using pd.interval_range
+    
+    for path in cfg.input_files:
+        df, header = process_file(path)
+        write_toa5_file(df, header, cfg.store_timestamp, cfg.store_record_numbers)
+    
+    if cfg.time_interval is not None:
+        matching_file_dict = build_matching_file_dict(cfg.output_files, cfg.file_matching_criteria)
+        for matching_files in matching_file_dict.values():
+            split_files_by_time_interval(matching_files, cfg)
+
+
+    
+
+
+
+
+    return
 
 # TODO: add
 # use_filemarks: bool, optional
@@ -47,7 +90,6 @@ def camp2ascii(
         output_dir: str | Path, 
         n_invalid: int | None = None, 
         pbar: bool = False, 
-        tob32: bool = False,
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
         time_interval: datetime.timedelta | None = None,
@@ -67,9 +109,6 @@ def camp2ascii(
         Stop after encountering N invalid data frames (0=never). Default is None.
     pbar : bool, optional
         Show progress bar (requires tqdm). Default is False.
-    tob32: bool, optional
-        Enable tob32 compatibility mode. Default is False.
-        Setting this to true may result in out-of-order records in the output when processing TOB3 files with ring memory enabled.
     store_record_numbers: bool, optional
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
@@ -120,22 +159,14 @@ def camp2ascii(
     if pbar:
         try:
             import tqdm
+import tempfile
             cfg.pbar = True
         except ImportError:
             sys.stderr.write("*** Warning: tqdm not installed; progress bar disabled.\n")
             cfg.pbar = False
-    
-    if tob32:
-        cfg.tob32 = True
 
     cfg.store_record_numbers = store_record_numbers
     cfg.store_timestamp = store_timestamp
-
-    output_files = execute_cfg(cfg, cli=False)
-
-    # if time_interval is not None or timedate_filenames is not None:
-    #     output_files = restructure_files(output_files, file_matching_criteria, time_interval, timedate_filenames)
-    # return output_files
 
 if __name__ == "__main__":
     raise SystemExit(0)

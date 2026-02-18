@@ -72,12 +72,44 @@ def compute_timedated_filenames(file_list: List[Path], time_interval: datetime.t
 def make_timeseries_contiguous(df: pd.DataFrame, start_time: datetime.datetime, end_time: datetime.datetime, freq: datetime.timedelta) -> pd.DataFrame:
     return (
         df
-        .set_index("TIMESTAMP")
         .reindex(pd.date_range(start=start_time, end=end_time, freq=freq), fill_value='NAN')
         .loc[start_time:end_time]
-        .reset_index()
-        .rename(columns={"index": "TIMESTAMP"})
     )
+
+def split_files_by_time_interval(file_list, cfg):
+    output_paths = []
+    time_sorted_filenames, sorted_file_start_timestamps = order_files_by_time(file_list)
+
+    i = 0
+    remainder_df = None
+    while i < len(time_sorted_filenames):
+        df, header = process_file(time_sorted_filenames[i])
+        if remainder_df is not None:
+            df = pd.concat([remainder_df, df])
+            df.sort_index(inplace=True)
+            remainder_df = None
+
+        start_time = df.index[0].floor(freq=cfg.time_interval)
+        while df.index[-1] - df.index[0] < cfg.time_interval:
+            i += 1
+            if i >= len(time_sorted_filenames):
+                break
+            next_df, _ = process_file(time_sorted_filenames[i])
+            df = pd.concat([df, next_df])
+        end_time = df.index[-1].floor(freq=cfg.time_interval)
+        remainder_df = df.loc[end_time:]
+
+        df = make_timeseries_contiguous(df, start_time, end_time, cfg.time_interval).loc[start_time:end_time]
+
+        time_intervals = pd.interval_range(start=start_time, end=end_time, freq=cfg.time_interval)
+        for interval in time_intervals:
+            interval_df = df.loc[interval[0]:interval[1]]
+            output_path = None # TODO: fill in
+            output_paths.append(output_path)
+            write_toa5_file(interval_df, header, output_path, cfg.store_timestamp, cfg.store_record_numbers)
+
+        i += 1
+    return output_paths
     
 
 def restructure_files(file_list: List[Path], file_matching_criteria: int, time_interval: datetime.timedelta | None, timedate_filenames: int) -> List[Path]:

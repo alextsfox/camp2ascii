@@ -30,6 +30,10 @@ class FileType(Enum):
     TOB3 = auto()
     TOA5 = auto()
 
+class TimeDateFNType(Enum):
+    NONE = auto()
+    YMD = auto()
+    YDOY = auto()
 
 # Frame sizing constants keyed by file type
 FRAME_HEADER_NBYTES = {
@@ -155,9 +159,6 @@ __all__ = [
     "TO_EPOCH",
     "MAX_FORMAT",
     "CR10_FP2_NAN",
-    "CR10_FP4_NAN",
-    "CR1000_FP2_NAN",
-    "CR1000_FP4_NAN",
     "FP2_NAN",
     "FP4_NAN",
     "UINT2_NAN",
