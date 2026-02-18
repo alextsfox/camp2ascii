@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .formats import TOA5Header, TOB1Header, TOB2Header, TOB3Header
+from .formats import FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
 
 def write_toa5_file(
@@ -40,15 +40,16 @@ def write_toa5_file(
             df[col] = '"' + df[col] + '"'
 
         for col in df.select_dtypes('float'):
-            csci_dtype = header.csci_dtypes[header.names.index(col)]
-            if csci_dtype == "FP2":
-                df[col] = df[col].map(lambda x: f"{x:.4f}")
-                print(df[col])
-            if csci_dtype in ["IEEE4", "IEEE4B"]:
-                df[col] = df[col].map(lambda x: f"{x:.8f}")
-            if csci_dtype in ["IEEE8", "IEEE8B", "FP4"]:
-                df[col] = df[col].map(lambda x: f"{x:.16f}")
-            df[col] = df[col].replace("nan", "NAN")
+            if header.file_type != FileType.TOA5:
+                csci_dtype = header.csci_dtypes[header.names.index(col)]
+                if csci_dtype == "FP2":
+                    df[col] = df[col].map(lambda x: f"{x:.4f}")
+                    print(df[col])
+                if csci_dtype in ["IEEE4", "IEEE4B"]:
+                    df[col] = df[col].map(lambda x: f"{x:.8f}")
+                if csci_dtype in ["IEEE8", "IEEE8B", "FP4"]:
+                    df[col] = df[col].map(lambda x: f"{x:.16f}")
+                df[col] = df[col].replace("nan", "NAN")
 
         df.to_csv(
             output_buffer, 
@@ -57,7 +58,6 @@ def write_toa5_file(
             encoding='ascii', 
             quotechar="'", 
             doublequote=False,
-            # quoting=csv.QUOTE_MINIMAL,
             lineterminator="\n", 
             header=False,
         )

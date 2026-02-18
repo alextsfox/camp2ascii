@@ -156,11 +156,12 @@ VALID_CSTYPES = {
     "INT4",
     "ULONG",
     "LONG",
-    "NSec",
-    "SecNano",
+    "NSEC",
+    "SECNANO",
     "BOOL",
-    "BOOL2",
+    # "BOOL2",
     "BOOL4",
+    "BOOL8",
     "ASCII",
 }
 

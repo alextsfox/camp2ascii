@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 
 def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
     # decode the intermediate data types
+    if isinstance(header, TOB1Header):
+        data_raw = [data_raw]
     data = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)[valid_rows]
     df = pd.DataFrame()
     for i, (name, t, tname) in enumerate(zip(header.names, header.csci_dtypes, header.intermediate_dtype.names)):
@@ -29,10 +31,12 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
             col = decode_fp2(data[tname], fp2_nan=header.fp2_nan)
         elif t == "FP4":
             col = decode_fp4(data[tname], fp4_nan=header.fp4_nan)
-        elif t == "NSec":
+        elif t == "NSEC":
             col = decode_nsec(data[tname])
-        elif t == "SecNano":
+        elif t == "SECNANO":
             col = decode_secnano(data[tname])
+        elif "ASCII" in t:
+            t = "ASCII"
         else:
             col = data[tname]
         df[name] = col.astype(FINAL_TYPES[t])

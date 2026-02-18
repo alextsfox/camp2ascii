@@ -130,9 +130,6 @@ def camp2ascii(
         case _:
             raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
 
-    if time_interval is None and timedate_filenames is not None:
-        raise ValueError("timedate_filenames cannot be used without time_interval.")
-
     if time_interval is not None:
         time_interval = pd.Timedelta(time_interval).to_pytimedelta()
         if time_interval.total_seconds() < 60.0:

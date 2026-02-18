@@ -14,8 +14,8 @@ from .formats import FP2_NAN, FP4_NAN, FileType, TO_EPOCH
 #     INT4 = auto()
 #     ULONG = auto()
 #     LONG = auto()
-#     NSec = auto()
-#     SecNano = auto()
+#     NSEC = auto()
+#     SECNANO = auto()
 #     # BOOL = auto()
 #     # BOOL2 = auto()
 #     # BOOL4 = auto()
@@ -36,11 +36,13 @@ INTERMEDIATE_TYPES = {
     "INT4": '>i4',
     "ULONG": '<u8',
     "LONG": '<i8',
-    "NSec": '>u8',
-    "SecNano": '<u8',
-    # CSType.BOOL: None,
+    "NSEC": '>u8',
+    "SECNANO": '<u8',
+    "BOOL": '?',
+    'BOOL8': 'B',
+    'BOOL4': '<u4',
     # CSType.BOOL2: None,
-    # CSType.BOOL4: None,
+    'BOOL2': '<u2',
     "ASCII": None  # ascii gets its own treatment in compute_ascii_dtype
 }
 FINAL_TYPES = {
@@ -58,26 +60,27 @@ FINAL_TYPES = {
     "INT4": np.int32,
     "ULONG": np.uint64,
     "LONG": np.int64,
-    "NSec": np.uint64,
-    "SecNano": np.uint64,
+    "NSEC": np.uint64,
+    "SECNANO": np.uint64,
     "BOOL": bool,
-    "BOOL2": bool,
+    "BOOL8": np.uint8,
     "BOOL4": bool,
+    'BOOL2': bool,
     "ASCII": str  # ascii gets its own treatment in compute_ascii_dtype
 }
 VALID_CSTYPES = set(INTERMEDIATE_TYPES.keys())
 
-SPECIAL_TYPES = {'FP2', 'FP4', 'NSec', 'SecNano'}  # these types cannot be directly mapped to numpy types and require special handling
+SPECIAL_TYPES = {'FP2', 'FP4', 'NSEC', 'SECNANO'}  # these types cannot be directly mapped to numpy types and require special handling
 
 def decode_secnano(secnano: np.int64) -> np.int64:
-    """Parse a SecNano timestamp into a Unix timestamp in nanoseconds."""
+    """Parse a SECNANO timestamp into a Unix timestamp in nanoseconds."""
     seconds = np.int64(secnano & 0xFFFFFFFF) + TO_EPOCH
     nanoseconds = np.int64(secnano >> 32)
     return seconds*1_000_000_000 + nanoseconds
 
 def decode_nsec(nsec: np.int64) -> np.int64:
-    """Parse a NSec timestamp into a Unix timestamp in nanoseconds."""
-    return decode_secnano(nsec)  # NSec and SecNano differ only in their endianness
+    """Parse a NSEC timestamp into a Unix timestamp in nanoseconds."""
+    return decode_secnano(nsec)  # NSEC and SECNANO differ only in their endianness
 
 def decode_fp2(fp2: np.uint16, fp2_nan=FP2_NAN) -> np.float32:
     fp2 = fp2.astype(np.uint16, copy=False)
@@ -122,7 +125,8 @@ def create_intermediate_datatype(cstypes: list[str]) -> np.dtype:
         if cstype.startswith("ASCII"):
             ascii_dtype = compute_ascii_dtype(cstype)
             fields.append((f"{cstype}_{i}", ascii_dtype))
-        fields.append((f"{cstype}_{i}", INTERMEDIATE_TYPES[cstype]))
+        else:
+            fields.append((f"{cstype}_{i}", INTERMEDIATE_TYPES[cstype]))
     return np.dtype(fields)
 
 FRAME_HEADER_DTYPE = {
