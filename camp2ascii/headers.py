@@ -260,14 +260,27 @@ def parse_toa5_header(header: List[str], path: Path) -> TOA5Header:
 def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, include_timestamp: bool, include_record: bool) -> str:
     """Format a header object as a list of strings representing a raw TOA5 header."""
     line_1 = f'"TOA5","{header.station_name}","{header.logger_model}","{header.logger_sn}","{header.logger_os}","{header.logger_program}","{header.logger_program_signature}","{header.table_name}"'
-    line_2 = ",".join(f'"{name}"' for name in header.names)
-    line_3 = ",".join(f'"{unit}"' for unit in header.units)
-    line_4 = ",".join(f'"{proc}"' for proc in header.processing)
-    if include_record:
+    
+    if header.file_type == FileType.TOB1:
+        names, units, procs = [], [], []
+        for n, u, p in zip(header.names, header.units, header.processing):
+            if n in {"SECONDS", "NANOSECONDS"}:
+                continue
+            names.append(n)
+            units.append(u)
+            procs.append(p)
+    else:
+        names, units, procs = header.names, header.units, header.processing
+
+    
+    line_2 = ",".join(f'"{name}"' for name in names)
+    line_3 = ",".join(f'"{unit}"' for unit in units)
+    line_4 = ",".join(f'"{proc}"' for proc in procs)
+    if include_record and "RECORD" not in header.names:
         line_2 = '"RECORD",' + line_2
         line_3 = '"RN","' + line_3
         line_4 = '"",' + line_4
-    if include_timestamp:
+    if include_timestamp and "TIMESTAMP" not in header.names:
         line_2 = '"TIMESTAMP",' + line_2
         line_3 = '"TS","' + line_3
         line_4 = '"",' + line_4

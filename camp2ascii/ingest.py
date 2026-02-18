@@ -105,11 +105,11 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         # handle minor/partial frames by marking the missing lines in a mask
         if footer.minor_frame:
             missing_lines = footer.offset/header.line_nbytes
-            # if missing_lines % 1 != 0:
-            #     sys.stderr.write(f" *** Warning: corrupt frame with non-integer number of missing lines ({missing_lines}) encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
-            #     sys.stderr.flush()
-            #     break
-            missing_lines = floor(missing_lines)
+            if missing_lines % 1 != 0:
+                sys.stderr.write(f" *** Warning: corrupt frame with non-integer number of missing lines ({missing_lines}) encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
+                sys.stderr.flush()
+                break
+            missing_lines = int(missing_lines)
             mask[(frame+1)*header.data_nlines - missing_lines:(frame+1)*header.data_nlines] = True
 
         headers_raw[frame] = header_bytes

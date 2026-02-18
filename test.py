@@ -10,7 +10,7 @@ if __name__ == "__main__":
     out_dir.mkdir(parents=True, exist_ok=True)
     for f in out_dir.iterdir():
         f.unlink() if f.is_file() else None
-    camp2ascii(in_dir, out_dir)
+    camp2ascii(str(in_dir / "*TOB1*"), out_dir)
 
     out_dir = Path("tests/c2a-timedate-filenames")
     out_dir.mkdir(parents=True, exist_ok=True)

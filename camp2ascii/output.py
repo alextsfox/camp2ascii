@@ -43,11 +43,16 @@ def write_toa5_file(
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "FP2":
                     df[col] = df[col].map(lambda x: f"{x:.4f}")
-                if csci_dtype in ["IEEE4", "IEEE4B"]:
+                elif csci_dtype in {"IEEE4", "IEEE4B"}:
                     df[col] = df[col].map(lambda x: f"{x:.8f}")
-                if csci_dtype in ["IEEE8", "IEEE8B", "FP4"]:
+                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].map(lambda x: f"{x:.16f}")
+                elif csci_dtype in {"NSEC", "SECNANO"}:
+                    df[col] = pd.to_datetime(df[col], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
                 df[col] = df[col].replace("nan", "NAN")
+
+        if header.file_type == FileType.TOB1:
+            df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
 
         df.to_csv(
             output_buffer, 

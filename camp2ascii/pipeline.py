@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
+import sys
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -26,7 +27,7 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
         data_raw = [data_raw]
     data = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)[valid_rows]
     df = pd.DataFrame()
-    for i, (name, t, tname) in enumerate(zip(header.names, header.csci_dtypes, header.intermediate_dtype.names)):
+    for name, t, tname in zip(header.names, header.csci_dtypes, header.intermediate_dtype.names):
         if t == "FP2":
             col = decode_fp2(data[tname], fp2_nan=header.fp2_nan)
         elif t == "FP4":
@@ -41,9 +42,15 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
             col = decode_bool8(data[tname])
         elif "ASCII" in t:
             t = "ASCII"
+            col = data[tname]
         else:
             col = data[tname]
-        df[name] = col.astype(FINAL_TYPES[t])
+        try:
+            df[name] = col.astype(FINAL_TYPES[t])
+        except UnicodeDecodeError:
+            df[name] = ""
+            sys.stderr.write(f" *** Warning: UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent)}. This column will be filled with empty strings.\n")
+            sys.stderr.flush()
     return df
 
 def compute_timestamps_and_records(
@@ -72,7 +79,7 @@ def compute_timestamps_and_records(
         timestamps[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(
             beg_timestamp, 
             beg_timestamp + header.data_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
-            np.int64(header.rec_intvl)*1_000_000_000,
+            np.int64(header.rec_intvl*1_000)*1_000_000,
             dtype=np.int64
         )
         records[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(beg_record, beg_record + header.data_nlines)
@@ -115,7 +122,8 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
         # produce the footers for debugging purposes
         timestamps, records, footers = compute_timestamps_and_records(headers_raw, footers_raw, valid_rows, header, nframes, nlines)
         df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-        df["RECORD"] = records
+        if "RECORD" not in df:
+            df["RECORD"] = records
         df.set_index("TIMESTAMP", inplace=True)
         df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
     elif header.file_type == FileType.TOB1:

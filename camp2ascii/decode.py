@@ -34,8 +34,8 @@ INTERMEDIATE_TYPES = {
     "INT2": '>i2',
     "UINT4": '>u4',
     "INT4": '>i4',
-    "ULONG": '<u8',
-    "LONG": '<i8',
+    "ULONG": '<u4',
+    "LONG": '<i4',
     "NSEC": '>u8',
     "SECNANO": '<u8',
     "BOOL": '?',
@@ -57,8 +57,8 @@ FINAL_TYPES = {
     "INT2": np.int16,
     "UINT4": np.uint32,
     "INT4": np.int32,
-    "ULONG": np.uint64,
-    "LONG": np.int64,
+    "ULONG": np.uint32,
+    "LONG": np.int32,
     "NSEC": np.uint64,
     "SECNANO": np.uint64,
     "BOOL": np.int8,
@@ -107,10 +107,10 @@ def decode_fp4(fp4: np.ndarray[np.uint32], fp4_nan=FP4_NAN) -> np.ndarray[np.flo
     return result
 
 def decode_bool(bool_val: np.ndarray[np.bool_]) -> np.ndarray[np.int8]:
-    return -np.int8(bool_val)
+    return np.where(bool_val, -1, 0).astype(np.int8)
 
 def decode_bool8(bool8: np.ndarray[np.uint8]) -> np.ndarray[str]:
-    return np.array([bin(b)[2:].zfill(8) for b in bool8])
+    return np.array([bin(b)[2:].zfill(8)[::-1] for b in bool8])
 
 def decode_frame_header_timestamp(seconds: np.int32, subseconds: np.int32, frame_time_resolution: float) -> np.int64:
     """Parse the timestamp from a TOB3 frame header and return it as a Unix timestamp in nanoseconds."""
