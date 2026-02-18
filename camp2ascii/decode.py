@@ -41,7 +41,6 @@ INTERMEDIATE_TYPES = {
     "BOOL": '?',
     'BOOL8': 'B',
     'BOOL4': '<u4',
-    # CSType.BOOL2: None,
     'BOOL2': '<u2',
     "ASCII": None  # ascii gets its own treatment in compute_ascii_dtype
 }
@@ -62,27 +61,27 @@ FINAL_TYPES = {
     "LONG": np.int64,
     "NSEC": np.uint64,
     "SECNANO": np.uint64,
-    "BOOL": bool,
-    "BOOL8": np.uint8,
-    "BOOL4": bool,
-    'BOOL2': bool,
+    "BOOL": np.int8,
+    "BOOL8": str,  # for compatibility with TOA5 BOOL8, which is a binary ascii string.
+    "BOOL4": np.int8,
+    'BOOL2': np.int8,
     "ASCII": str  # ascii gets its own treatment in compute_ascii_dtype
 }
 VALID_CSTYPES = set(INTERMEDIATE_TYPES.keys())
 
 SPECIAL_TYPES = {'FP2', 'FP4', 'NSEC', 'SECNANO'}  # these types cannot be directly mapped to numpy types and require special handling
 
-def decode_secnano(secnano: np.int64) -> np.int64:
+def decode_secnano(secnano: np.ndarray[np.int64]) -> np.ndarray[np.int64]:
     """Parse a SECNANO timestamp into a Unix timestamp in nanoseconds."""
     seconds = np.int64(secnano & 0xFFFFFFFF) + TO_EPOCH
     nanoseconds = np.int64(secnano >> 32)
     return seconds*1_000_000_000 + nanoseconds
 
-def decode_nsec(nsec: np.int64) -> np.int64:
+def decode_nsec(nsec: np.ndarray[np.int64]) -> np.int64:
     """Parse a NSEC timestamp into a Unix timestamp in nanoseconds."""
     return decode_secnano(nsec)  # NSEC and SECNANO differ only in their endianness
 
-def decode_fp2(fp2: np.uint16, fp2_nan=FP2_NAN) -> np.float32:
+def decode_fp2(fp2: np.ndarray[np.uint16], fp2_nan=FP2_NAN) -> np.ndarray[np.float32]:
     fp2 = fp2.astype(np.uint16, copy=False)
     sign = (fp2 >> 15) & 0x1
     exponent = (fp2 >> 13) & 0x3
@@ -98,7 +97,7 @@ def decode_fp2(fp2: np.uint16, fp2_nan=FP2_NAN) -> np.float32:
 
     return result
 
-def decode_fp4(fp4: np.uint32, fp4_nan=FP4_NAN) -> np.float64:
+def decode_fp4(fp4: np.ndarray[np.uint32], fp4_nan=FP4_NAN) -> np.ndarray[np.float64]:
     # taken directly from Mathias Bavay's camp2ascii: "in progress... but it should work! see Appendix C of CR10X manual"
     sign = ((0x80000000 & fp4) >> 31)
     exponent = ((0x7F000000 & fp4) >> 24)
@@ -106,6 +105,12 @@ def decode_fp4(fp4: np.uint32, fp4_nan=FP4_NAN) -> np.float64:
     result = (-1)**sign * mantissa.astype(np.float64)/16777216.0*(2.0**(exponent.astype(np.float64)-64))
     result = np.where(np.abs(result) >= fp4_nan, np.nan, result)
     return result
+
+def decode_bool(bool_val: np.ndarray[np.bool_]) -> np.ndarray[np.int8]:
+    return -np.int8(bool_val)
+
+def decode_bool8(bool8: np.ndarray[np.uint8]) -> np.ndarray[str]:
+    return np.array([bin(b)[2:].zfill(8) for b in bool8])
 
 def decode_frame_header_timestamp(seconds: np.int32, subseconds: np.int32, frame_time_resolution: float) -> np.int64:
     """Parse the timestamp from a TOB3 frame header and return it as a Unix timestamp in nanoseconds."""

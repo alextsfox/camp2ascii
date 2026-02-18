@@ -10,7 +10,7 @@ import pandas as pd
 from .formats import FileType, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH
 from .decode import (
     FRAME_HEADER_DTYPE, FINAL_TYPES,
-    decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp
+    decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp, decode_bool, decode_bool8
 )
 from .headers import parse_file_header
 from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
@@ -35,6 +35,10 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
             col = decode_nsec(data[tname])
         elif t == "SECNANO":
             col = decode_secnano(data[tname])
+        elif t in {"BOOL", "BOOL4", "BOOL2"}:
+            col = decode_bool(data[tname])
+        elif t == "BOOL8":
+            col = decode_bool8(data[tname])
         elif "ASCII" in t:
             t = "ASCII"
         else:

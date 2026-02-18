@@ -81,9 +81,9 @@ def parse_tob3_header(header: List[str], path: Path) -> TOB3Header:
         multiplier = 3600.0
     elif "MIN" in rec_intvl.upper():
         multiplier = 60.0
-    elif "SEC" in rec_intvl.upper() and "MIN" not in rec_intvl.upper() and "HOUR" not in rec_intvl.upper():
+    elif "SEC" in rec_intvl.upper():
         multiplier = 1.0
-    elif "MSEC" in rec_intvl.upper():
+    if "MSEC" in rec_intvl.upper():
         multiplier = 1e-3
     elif "USEC" in rec_intvl.upper():
         multiplier = 1e-6
