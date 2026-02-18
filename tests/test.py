@@ -3,7 +3,7 @@ import sys
 from time import perf_counter as timer
 print(Path(__file__).parent.parent)
 sys.path.append(str(Path(__file__).parent.parent))
-from camp2ascii.mymain import main
+from camp2ascii.pipeline import main
 # from camp2ascii import camp2ascii as c2a
 if __name__ == "__main__":
     path = Path("/home/alextsfox/git-repos/camp2ascii/tests/tob3/2991.CPk_BBUF3m_10Hz620.dat")

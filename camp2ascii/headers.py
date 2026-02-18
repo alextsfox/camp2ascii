@@ -5,20 +5,20 @@ from dataclasses import asdict
 from math import ceil
 from typing import BinaryIO, List
 
-from camp2ascii.constants import (
+from camp2ascii.formats import (
     FileType,
-    CR10_FP2_NAN,
     FRAME_FOOTER_NBYTES,
     FRAME_HEADER_NBYTES,
-    FP2_NAN,
-    FP4_NAN,
     TOA5Header,
     TOB1Header,
     TOB2Header,
     TOB3Header,
     VALID_CSTYPES,
+    CR10_FP2_NAN,
+    FP2_NAN,
+    FP4_NAN,
 )
-from camp2ascii.typeconversion import create_intermediate_datatype
+from camp2ascii.decode import create_intermediate_datatype
 
 def parse_tob3_header(header: List[str]) -> TOB3Header:
     """Parse a TOB3 header from a list of strings and return a TOB3Header object."""
@@ -157,9 +157,6 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
     processing = next(reader)
     csci_dtypes = [d.strip().upper() for d in next(reader)]
 
-    fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
-    fp4_nan = FP4_NAN
-
     return TOB1Header(
         file_type=file_type,
         station_name=station_name.strip(),
@@ -172,9 +169,7 @@ def parse_tob1_header(header: List[str]) -> TOB1Header:
         names=names,
         units=units,
         processing=processing,
-        csci_dtypes=csci_dtypes,
-        fp2_nan=fp2_nan,
-        fp4_nan=fp4_nan
+        csci_dtypes=csci_dtypes
     )
 
 def parse_toa5_header(header: List[str]) -> TOA5Header:
@@ -264,4 +259,3 @@ if __name__ == "__main__":
             case FileType.TOA5:
                 header_bytes = [buff.readline().decode("ascii", errors="ignore") for _ in range(4)]
                 header = parse_toa5_header(header_bytes)
-                

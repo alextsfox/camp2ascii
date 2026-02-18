@@ -1,5 +1,5 @@
 import numpy as np
-from .constants import FP2_NAN, FP4_NAN, FileType, TO_EPOCH
+from .formats import FP2_NAN, FP4_NAN, FileType, TO_EPOCH
 
 # class CSType(Enum):
 #     IEEE4 = auto()
