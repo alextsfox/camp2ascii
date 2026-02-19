@@ -1,16 +1,18 @@
 import argparse
+from collections.abc import Sequence
 import sys
 from __future__ import annotations
 
 from glob import glob
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from pathlib import Path
 import datetime
 
 import pandas as pd
 
 from .warninghandler import get_global_warn, set_global_warn
+from .logginghandler import get_global_log, set_global_log
 
 if TYPE_CHECKING:
     from tqdm import tqdm
@@ -68,6 +70,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
         log_file_buffer = open(log_file, "w")
     set_global_warn(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
+    set_global_log(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
 
     try:
         out_files = main(
@@ -85,8 +88,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     finally:
         if log_file_buffer is not None:
             log_file_buffer.close()
-
-
 
     return 0
 

@@ -21,9 +21,11 @@ import datetime
 
 import pandas as pd
 
+
 from .pipeline import execute_config
 from .formats import Config
 from .warninghandler import get_global_warn, set_global_warn
+from .logginghandler import get_global_log, set_global_log
 
 if TYPE_CHECKING:
     from tqdm import tqdm
@@ -104,7 +106,8 @@ def camp2ascii(
         log_file_number = len(list(out_dir.glob('.camp2ascii_*.log')))+1
         log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
         log_file_buffer = open(log_file, "w")
-    set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
+    set_global_warn(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
+    set_global_log(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
 
     try:
         return main(

@@ -9,6 +9,7 @@ import re
 import numpy as np
 
 from .warninghandler import get_global_warn
+from .logginghandler import get_global_log
 from .formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header, REPAIR_MISALIGNED_MINOR_FRAMES
 
 if TYPE_CHECKING:
@@ -62,6 +63,7 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         A boolean mask indicating which *lines* are missing due to minor frames
     """
     warn = get_global_warn()
+    log = get_global_log()
 
     frame_header_nbytes = FRAME_HEADER_NBYTES[header.file_type]
 
@@ -85,6 +87,7 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         # EOF
         if len(footer_bytes) < FRAME_FOOTER_NBYTES:
             mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True
+            log(f"Reached end of file {header.path.relative_to(header.path.parent.parent.parent)} after processing {frame} frames (expected {header.table_nframes_expected}).")
             break
 
         footer = parse_footer(footer_bytes)
@@ -95,10 +98,11 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         trailing_bytes = valid_bytes - valid_lines*header.line_nbytes
 
         if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)):
+            log(f"Invalid frame footer found at byte {input_buff.tell() - FRAME_FOOTER_NBYTES} in {header.path.relative_to(header.path.parent.parent.parent)}. This frame will be skipped.")
             skipped_frames += 1
             mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True  # mark the whole frame as missing if the footer is invalid, since we can't trust the minor frame flag
             if n_invalid is not None and skipped_frames >= n_invalid:
-                warn(f" *** Stopping after finding {skipped_frames} consecuting invalid frames in {header.path.relative_to(header.path.parent.parent.parent)}.")
+                warn(f"Stopping after finding {skipped_frames} consecuting invalid frames in {header.path.relative_to(header.path.parent.parent.parent)}.")
                 break
             continue
         elif (footer.minor_frame and 
@@ -143,6 +147,8 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         skipped_frames = 0  # reset count of consecutively skipped frames after a successful frame
         if pbar is not None:
             pbar.update(header.frame_nbytes)
+
+        log(f"Processed frame {frame+1} in {header.path.relative_to(header.path.parent.parent.parent)}. Valid lines: {valid_lines}/{header.data_nlines}. Minor frame: {footer.minor_frame}. File mark: {footer.file_mark}. Ring mark: {footer.ring_mark}.")
     
     return headers_raw[:final_frame], data_raw[:final_frame], footers_raw[:final_frame], mask[:final_frame*header.data_nlines]
 
