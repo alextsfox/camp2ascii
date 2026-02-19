@@ -22,6 +22,7 @@ TO_EPOCH = 631_152_000  # seconds between Unix epoch and Campbell epoch
 UINT2_NAN = 65535  # NAN for UINT2 on all loggers
 TRUNC_FACTOR = 1.00001
 TM_Y0 = 1900  # Campbell epoch year
+REPAIR_MINOR_FRAMES = True  # whether to attempt to salvage valid data lines from minor frames with non-zero offsets. use with caution
 
 # hard-coded NAN values
 # if abs(number) >= xxx_NAN, then it is considered a NAN

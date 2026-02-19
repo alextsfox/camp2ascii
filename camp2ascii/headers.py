@@ -127,7 +127,13 @@ def parse_tob3_header(header: List[str], path: Path) -> TOB3Header:
     data_nlines = data_nbytes // line_nbytes
     if data_nlines > MAX_FORMAT:
         raise ValueError(f"Number of lines per frame ({data_nlines}) exceeds maximum expected ({MAX_FORMAT}). The header may be corrupt. Change formats.MAX_FORMAT to increase the limit.")
-    table_nframes_expected = ceil(table_nlines_expected / data_nlines)
+    
+    header_nbytes = len(''.join(header))
+    file_nbytes = path.stat().st_size
+    table_nframes_expected = (file_nbytes - header_nbytes) // frame_nbytes
+    table_nlines_expected = table_nframes_expected * data_nlines
+    # table_nframes_expected = ceil(table_nlines_expected / data_nlines)
+
 
     fp2_nan = CR10_FP2_NAN if logger_model.strip().upper() == "CR10" else FP2_NAN
     fp4_nan = FP4_NAN

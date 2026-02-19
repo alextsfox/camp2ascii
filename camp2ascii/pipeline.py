@@ -42,7 +42,9 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
             col = decode_bool8(data[tname])
         elif "ASCII" in t:
             t = "ASCII"
-            col = data[tname]
+            # Trim at first NUL; tolerate junk after NUL and decode as ASCII
+            col = np.array([x.split(b"\x00", 1)[0] for x in data[tname]])
+            
         else:
             col = data[tname]
         try:
