@@ -47,9 +47,11 @@ def write_toa5_file(
                     df[col] = df[col].map(lambda x: f"{x:.8f}")
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].map(lambda x: f"{x:.16f}")
-                elif csci_dtype in {"NSEC", "SECNANO"}:
-                    df[col] = pd.to_datetime(df[col], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
                 df[col] = df[col].replace("nan", "NAN")
+
+        for name, csci_dtype in zip(header.names, header.csci_dtypes):
+            if csci_dtype in {"NSEC", "SECNANO"}:
+                df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if header.file_type == FileType.TOB1:
             df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')

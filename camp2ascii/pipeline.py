@@ -63,6 +63,7 @@ def compute_timestamps_and_records(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw), dtype=FRAME_HEADER_DTYPE[header.file_type]))
     footers = np.empty((nframes, 9), dtype=np.float32)
+    timestamps = []
     for i, (foot, head) in enumerate(zip(footers_raw, headers)):
         timestamp = decode_frame_header_timestamp(head[0], head[1], header.frame_time_res)
         record = head[2]

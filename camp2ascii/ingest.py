@@ -6,6 +6,8 @@ import sys
 
 import numpy as np
 
+from camp2ascii.decode import decode_frame_header_timestamp
+
 from .formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header
 
 if TYPE_CHECKING:
@@ -77,8 +79,9 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         footer_bytes = input_buff.read(FRAME_FOOTER_NBYTES)
         footer = parse_footer(footer_bytes)
 
-        if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)):
+        if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)) or (footer.minor_frame and not footer.empty_frame):
             skipped_frames += 1
+            mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True  # mark the whole frame as missing if the footer is invalid, since we can't trust the minor frame flag
             if n_invalid is not None and skipped_frames >= n_invalid:
                 sys.stderr.write(f" *** Stopping after {skipped_frames} invalid frames (stop_cond={n_invalid}) in {header.path.relative_to(header.path.parent.parent)}.\n")
                 sys.stderr.flush()
@@ -87,7 +90,6 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
                 sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
                 sys.stderr.flush()
                 break
-
             continue
 
         # return to beginning of the frame to reader header and data once validation is successful
@@ -95,6 +97,13 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
 
         header_bytes = input_buff.read(frame_header_nbytes)
         data_bytes = input_buff.read(header.data_nbytes)
+
+        # from .decode import decode_frame_header_timestamp
+        # from .formats import TO_EPOCH
+        # import pandas as pd
+        # print(pd.to_datetime(decode_frame_header_timestamp(seconds=int.from_bytes(header_bytes[0:4], "little", signed=True), subseconds=int.from_bytes(header_bytes[4:8], "little", signed=True), frame_time_resolution=header.frame_time_res), unit="ns"))
+        # print(int.from_bytes(header_bytes[8:], "little", signed=True))
+        # print(footer)
 
         input_buff.seek(FRAME_FOOTER_NBYTES, 1)  # seek past the footer to the next frame
         if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
@@ -120,7 +129,7 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
 
         if pbar is not None:
             pbar.update(header.frame_nbytes)
-
+    
     return headers_raw[:final_frame], data_raw[:final_frame], footers_raw[:final_frame], mask[:final_frame*header.data_nlines]
 
 def ingest_tob2_data(input_buff: BinaryIO, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
