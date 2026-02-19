@@ -1,6 +1,6 @@
 import argparse
 import sys
-from typing import Optional, Sequence
+from collections.abc import Optional, Sequence
 
 from .camp2ascii import camp2ascii
 def main(argv: Optional[Sequence[str]] = None) -> int:

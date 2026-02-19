@@ -1,6 +1,5 @@
 from pathlib import Path
 from collections import defaultdict
-from typing import List, Dict, Tuple
 import datetime
 import sys
 
@@ -8,8 +7,9 @@ import pandas as pd
 
 from .formats import Config
 from .output import write_toa5_file
+from .warninghandler import get_global_warn
 
-def build_matching_file_dict(files: List[Path]) -> Dict[str, List[Path]]:
+def build_matching_file_dict(files: list[Path]) -> dict[str, list[Path]]:
     matching_file_dict = defaultdict(list)
     for fn in files:
         with open(fn, 'r') as f:
@@ -17,7 +17,7 @@ def build_matching_file_dict(files: List[Path]) -> Dict[str, List[Path]]:
         matching_file_dict.setdefault(hash(header), []).append(fn)
     return matching_file_dict
 
-def order_files_by_time(matching_files: List[Path]) -> tuple[List[Path], List[Path]]:
+def order_files_by_time(matching_files: list[Path]) -> tuple[list[Path], list[Path]]:
     file_start_timestamps = []
     # file_end_timestamps = []
     for fn in matching_files:
@@ -31,7 +31,7 @@ def order_files_by_time(matching_files: List[Path]) -> tuple[List[Path], List[Pa
     file_start_timestamps = sorted(file_start_timestamps)
     return matching_files, file_start_timestamps
 
-def group_files_by_time_interval(time_sorted_filenames: List[Path], sorted_file_start_timestamps: List[datetime.datetime], time_interval: datetime.timedelta) -> Tuple[List[List[Path]], List[datetime.datetime]]:
+def group_files_by_time_interval(time_sorted_filenames: list[Path], sorted_file_start_timestamps: list[datetime.datetime], time_interval: datetime.timedelta) -> tuple[list[list[Path]], list[datetime.datetime]]:
     file_groups = []
     start_times = []
 
@@ -61,6 +61,8 @@ def make_timeseries_contiguous(df: pd.DataFrame, start_time: datetime.datetime, 
     )
 
 def split_files_by_time_interval(file_list: list[Path | str], cfg: Config) -> list[Path]:
+    warn = get_global_warn()
+
     output_paths = []
     from .pipeline import process_file
     time_sorted_filenames, _ = order_files_by_time(file_list)
@@ -76,8 +78,7 @@ def split_files_by_time_interval(file_list: list[Path | str], cfg: Config) -> li
     freq = df.index.diff().min()
     mode_time_diff = df.index.diff().total_seconds().value_counts().sort_values().index[-1]
     if mode_time_diff != freq.total_seconds():
-        sys.stderr.write(f" *** Warning: detected irregular timestamp intervals in file {fn_ref.name}. Minimum interval is {freq}, but the most common interval is {mode_time_diff}. Using {freq} as the interval.\n")
-        sys.stderr.flush()
+        warn(f"detected irregular timestamp intervals in file {fn_ref.name}. Minimum interval is {freq}, but the most common interval is {mode_time_diff}. Using {freq} as the interval.")
 
     i = 0
     while df is not None:

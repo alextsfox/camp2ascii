@@ -17,11 +17,14 @@ from .headers import parse_file_header
 from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
 from .output import write_toa5_file
 from .restructure import build_matching_file_dict, split_files_by_time_interval
+from .warninghandler import get_global_warn
 
 if TYPE_CHECKING:
     from tqdm import tqdm
 
 def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
+    warn = get_global_warn()
+
     # decode the intermediate data types
     if isinstance(header, TOB1Header):
         data_raw = [data_raw]
@@ -42,17 +45,24 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
             col = decode_bool8(data[tname])
         elif "ASCII" in t:
             t = "ASCII"
-            # Trim at first NUL; tolerate junk after NUL and decode as ASCII
-            col = np.array([x.split(b"\x00", 1)[0] for x in data[tname]])
-            
+            try:
+                col = data[tname]
+                col.astype(FINAL_TYPES[t])
+            except UnicodeDecodeError:
+                try:
+                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data[tname]])
+                    col = np.where(col == "", "NAN", col)  # convert empty strings to NaN for consistency with TOA5 files, which use "NAN" for missing values in ASCII fields
+                    warn(f"Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. Problematic entries will be filled with 'NAN'. Some data corruption is possible.")
+                except UnicodeDecodeError:
+                    col = np.array(["NAN"]*len(data[tname]))
+                    warn(f"Unrecoverable Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be entirely filled with 'NAN'.")
         else:
             col = data[tname]
         try:
             df[name] = col.astype(FINAL_TYPES[t])
         except UnicodeDecodeError:
             df[name] = ""
-            sys.stderr.write(f" *** Warning: UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent)}. This column will be filled with empty strings.\n")
-            sys.stderr.flush()
+            warn(f"UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be filled with empty strings.")
     return df
 
 def compute_timestamps_and_records(
@@ -140,6 +150,7 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
 
 def execute_config(cfg: Config) -> list[Path]:
     output_paths = []
+    nbytes_proc_total = 0  # for progress bar tracking
     for path in cfg.input_files:
         df, header = process_file(path, cfg.stop_cond, pbar=cfg.pbar)
         if cfg.timedate_filenames is not None and df.index.name == "TIMESTAMP":
@@ -148,6 +159,14 @@ def execute_config(cfg: Config) -> list[Path]:
             out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
         output_paths.append(out_path)
         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+        if cfg.pbar is not None:
+            nbytes_proc_total += out_path.stat().st_size
+            cfg.pbar.n = nbytes_proc_total
+            cfg.pbar.refresh()
+    if cfg.pbar is not None:
+        cfg.pbar.n = cfg.pbar.total
+        cfg.pbar.refresh()
+        cfg.pbar.close()
     
     if cfg.time_interval is not None:
         output_paths_2 = []

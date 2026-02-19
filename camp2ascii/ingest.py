@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from math import floor, ceil
-from typing import BinaryIO, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from io import BufferedReader
 import sys
 import re
 
 import numpy as np
 
-from camp2ascii.decode import decode_frame_header_timestamp
-
-from .formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header, REPAIR_MINOR_FRAMES
+from .warninghandler import get_global_warn
+from .formats import Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header, REPAIR_MISALIGNED_MINOR_FRAMES
 
 if TYPE_CHECKING:
     from tqdm.std import tqdm
@@ -25,7 +25,7 @@ def parse_footer(footer_bytes: bytes) -> Footer:
         validation = (content >> 16) & 0xFFFF,
     )
 
-def ingest_tob1_data(input_buff: BinaryIO, header: TOB1Header, ascii_header_nbytes: int, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob1_data(input_buff: BufferedReader, header: TOB1Header, ascii_header_nbytes: int, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """TOB1 files do not have frame headers or footers, so we return empty lists for those and read the entire data section as a single block."""
     input_buff.seek(ascii_header_nbytes)
     data_bytes = input_buff.read()
@@ -36,12 +36,12 @@ def ingest_tob1_data(input_buff: BinaryIO, header: TOB1Header, ascii_header_nbyt
         pbar.update(ascii_header_nbytes + len(data_bytes))
     return [], data_bytes, [], mask
 
-def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob3 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames.
     
     Parameters
     -----------
-    input_buff: BinaryIO
+    input_buff: BufferedReader
         A binary file-like object containing the TOB3 data
     header: TOB3Header | TOB2Header
         The parsed header of the TOB file, used to derive constants for parsing the frames
@@ -61,6 +61,8 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
     mask: np.ndarray
         A boolean mask indicating which *lines* are missing due to minor frames
     """
+    warn = get_global_warn()
+
     frame_header_nbytes = FRAME_HEADER_NBYTES[header.file_type]
 
     input_buff.seek(ascii_header_nbytes)
@@ -79,6 +81,12 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         input_buff.seek(frame_header_nbytes + header.data_nbytes, 1)
         
         footer_bytes = input_buff.read(FRAME_FOOTER_NBYTES)
+
+        # EOF
+        if len(footer_bytes) < FRAME_FOOTER_NBYTES:
+            mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True
+            break
+
         footer = parse_footer(footer_bytes)
 
         # Compute valid lines using byte counts; minor frames can have non-integer offsets
@@ -90,22 +98,18 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
             skipped_frames += 1
             mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True  # mark the whole frame as missing if the footer is invalid, since we can't trust the minor frame flag
             if n_invalid is not None and skipped_frames >= n_invalid:
-                sys.stderr.write(f" *** Stopping after {skipped_frames} invalid frames (stop_cond={n_invalid}) in {header.path.relative_to(header.path.parent.parent)}.\n")
-                sys.stderr.flush()
-                break
-            if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
-                sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
-                sys.stderr.flush()
+                warn(f" *** Stopping after finding {skipped_frames} consecuting invalid frames in {header.path.relative_to(header.path.parent.parent.parent)}.")
                 break
             continue
-        elif footer.minor_frame and footer.offset and trailing_bytes != 0:
-            # Allow partial-line offsets on minor frames, but warn so behavior is visible
-            sys.stderr.write(
-                f" *** Warning: minor frame with non-aligned offset={footer.offset}B (line_nbytes={header.line_nbytes}, trailing_bytes={trailing_bytes}) in {header.path.relative_to(header.path.parent.parent)}; using floor(valid_bytes/line_nbytes)={valid_lines} valid lines.\n"
-            )
-            sys.stderr.flush()
-            if not REPAIR_MINOR_FRAMES:
-                sys.stderr.write(f" *** Warning: skipping minor frame {frame} in {header.path.relative_to(header.path.parent.parent)} due to non-zero offset and formats.REPAIR_MINOR_FRAMES=False.\n")
+        elif (footer.minor_frame and 
+              footer.offset > 0 and 
+              trailing_bytes != 0 and 
+              0 < valid_lines < header.data_nlines):
+            if REPAIR_MISALIGNED_MINOR_FRAMES:
+                # Allow partial-line offsets on minor frames, but warn so behavior is visible
+                warn(f"attempting to repair misaligned minor frame found at byte {input_buff.tell() - header.frame_nbytes} in {header.path.relative_to(header.path.parent.parent.parent)}. This can be indicative of a clock reset or file corruption, may result in data corruption. To skip misaligned frames in the future, set formats.REPAIR_MISALIGNED_MINOR_FRAMES=False.\n")
+            else:
+                warn(f"skipping misaligned minor frame found at byte {input_buff.tell() - header.frame_nbytes} in {header.path.relative_to(header.path.parent.parent.parent)}. This can be indicative of a clock reset or file corruption. To attempt to process these frames in the future, set formats.REPAIR_MISALIGNED_MINOR_FRAMES=True.")
                 mask[frame*header.data_nlines:(frame+1)*header.data_nlines] = True  # mark the whole frame as missing if we're not parsing minor frames, since we can't trust any of the data in this case
                 continue
 
@@ -115,27 +119,19 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         header_bytes = input_buff.read(frame_header_nbytes)
         data_bytes = input_buff.read(header.data_nbytes)
 
-        # from .decode import decode_frame_header_timestamp
-        # from .formats import TO_EPOCH
-        # import pandas as pd
-        # print(pd.to_datetime(decode_frame_header_timestamp(seconds=int.from_bytes(header_bytes[0:4], "little", signed=True), subseconds=int.from_bytes(header_bytes[4:8], "little", signed=True), frame_time_resolution=header.frame_time_res), unit="ns"))
-        # print(int.from_bytes(header_bytes[8:], "little", signed=True))
-        # print(footer)
-
-        input_buff.seek(FRAME_FOOTER_NBYTES, 1)  # seek past the footer to the next frame
+        input_buff.seek(FRAME_FOOTER_NBYTES, 1)
         if input_buff.tell() - ascii_header_nbytes != (frame + 1) * header.frame_nbytes:
-            sys.stderr.write(f" *** Warning: corrupt data frame encountered at position {input_buff.tell()}B in {header.path.relative_to(header.path.parent.parent)}. Further data in this file will not be processed.\n")
-            sys.stderr.flush()
+            warn("This should never happen, since we're supposed to catch EOF at the beginning of the loop.")
             break
             
-        # handle minor/partial frames by marking the missing lines in a mask
+        # handle well-aligned minor frames by marking the missing lines in a mask
         if footer.minor_frame:
             mask[frame*header.data_nlines + valid_lines:(frame+1)*header.data_nlines] = True
 
         headers_raw[frame] = header_bytes
 
-        if trailing_bytes > 0 and footer.minor_frame and REPAIR_MINOR_FRAMES:
-            sys.stderr.write(f" *** Warning: detected an atypical minor frame with {trailing_bytes} trailing bytes after valid data in frame {frame} of {header.path.relative_to(header.path.parent.parent)}. These bytes will be discarded. The resulting data within this frame may be temporally misaligned. To avoid processing frames like this in the futre, ensure that formats.REPAIR_MINOR_FRAMES is set to False.\n")
+        # repair a misaligned minor frame
+        if trailing_bytes > 0 and footer.minor_frame and REPAIR_MISALIGNED_MINOR_FRAMES:
             # TODO: wtf is going on with the header offset???????
             # It seems like like the first row has trailing_bytes number of bytes added to it, but there also seems to be some sort of offset by ~2 rows
             data_bytes = data_bytes[:header.line_nbytes - trailing_bytes] + data_bytes[header.line_nbytes:] + bytes(trailing_bytes)
@@ -144,12 +140,12 @@ def ingest_tob3_data(input_buff: BinaryIO, header: TOB3Header | TOB2Header, asci
         footers_raw[frame] = footer
         
         final_frame = frame + 1  # final frame is the last successfully validated one
-
+        skipped_frames = 0  # reset count of consecutively skipped frames after a successful frame
         if pbar is not None:
             pbar.update(header.frame_nbytes)
     
     return headers_raw[:final_frame], data_raw[:final_frame], footers_raw[:final_frame], mask[:final_frame*header.data_nlines]
 
-def ingest_tob2_data(input_buff: BinaryIO, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob2_data(input_buff: BufferedReader, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob2 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames."""
     return ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)  # TOB2 and TOB3 have the same frame structure, just different header content

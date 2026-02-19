@@ -53,7 +53,7 @@ class TestCamp2Ascii(TestCase):
         for f in out_dir.iterdir():
             f.unlink() if f.is_file() else None
 
-        glob_str = "*TOB3_ring*"
+        glob_str = "*TOB3*"
         out_files = camp2ascii(str(in_dir / glob_str), out_dir)
 
         my_tob3 = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP", na_values="NAN") for f in out_files])

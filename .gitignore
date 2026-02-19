@@ -16,7 +16,7 @@ build/
 *.egg-info/
 
 parsed
-*.dat
-tests/c2a-*
-tests/cc-*
+**.dat
+tests/c2a*
+tests/cc*
 tests/raw*

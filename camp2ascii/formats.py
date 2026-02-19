@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +22,7 @@ TO_EPOCH = 631_152_000  # seconds between Unix epoch and Campbell epoch
 UINT2_NAN = 65535  # NAN for UINT2 on all loggers
 TRUNC_FACTOR = 1.00001
 TM_Y0 = 1900  # Campbell epoch year
-REPAIR_MINOR_FRAMES = False  # whether to attempt to salvage valid data lines from minor frames with non-zero offsets. use with caution
+REPAIR_MISALIGNED_MINOR_FRAMES = False  # whether to attempt to salvage valid data lines from minor frames with non-zero offsets. use with caution
 # TODO: figure out why my frames have offset timestamps from cardconvert's when repairing minor frames.
 
 # hard-coded NAN values
@@ -78,10 +78,10 @@ class TOB3Header:
     ring_record: int  # record number where table wrapped around in ring-memory mode
     removal_time: int  # card removal time (seconds? record number? idk).
     unknown_final_field: str  # this is the last field in the second line of the header
-    names: List[str]
-    units: List[str]
-    processing: List[str]
-    csci_dtypes: List[str]
+    names: list[str]
+    units: list[str]
+    processing: list[str]
+    csci_dtypes: list[str]
     # derived fields
     data_nbytes: int
     intermediate_dtype: np.dtype
@@ -108,10 +108,10 @@ class TOB1Header:
     logger_program: str
     logger_program_signature: int
     table_name: str
-    names: List[str]
-    units: List[str]
-    processing: List[str]
-    csci_dtypes: List[str]
+    names: list[str]
+    units: list[str]
+    processing: list[str]
+    csci_dtypes: list[str]
     # derived fields
     intermediate_dtype: np.dtype
     line_nbytes: int
@@ -130,9 +130,9 @@ class TOA5Header:
     logger_program: str
     logger_program_signature: int
     table_name: str
-    names: List[str]
-    units: List[str]
-    processing: List[str]
+    names: list[str]
+    units: list[str]
+    processing: list[str]
     # derived fields
     path: Path
 

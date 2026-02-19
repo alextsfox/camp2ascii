@@ -23,9 +23,10 @@ import pandas as pd
 
 from .pipeline import execute_config
 from .formats import Config
+from .warninghandler import get_global_warn, set_global_warn
 
 if TYPE_CHECKING:
-    from tqdm.std import tqdm
+    from tqdm import tqdm
 
 
 # TODO: add
@@ -49,6 +50,7 @@ def camp2ascii(
         time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
         contiguous_timeseries: int = 0,
+        verbose: int = 1,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
     
@@ -62,9 +64,6 @@ def camp2ascii(
         Stop after encountering N invalid data frames. Default is None (never).
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
         As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
-    pbar : bool, optional
-        Show progress bar (requires tqdm). Default is False.
-    store_record_numbers: bool, optional
         store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
         store the timestamp of each line as an additional column in the output. Default is True.
@@ -81,12 +80,61 @@ def camp2ascii(
         0: disabled (default)
         1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
         2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
+    pbar : bool, optional
+        Print a progress bar to stdout (requires tqdm). Default is False.
+    store_record_numbers: bool, optional
+    verbose: int, optional
+        level of verbosity for warnings and informational messages. Default is 1.
+        0: no warnings or informational messages will be shown.
+        1: show warnings (default)
+        2: show all warnings and logs
+        3: write all warnings and logs (except pbar) to a file named .camp2ascii_*.log in the output directory.
     Returns
     -------
     list[Path]
-        List of Paths to the generated output files.
+        list of Paths to the generated output files.
 
     """
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file_buffer = None
+    if verbose == 3:
+        log_file_number = len(list(out_dir.glob('.camp2ascii_*.log')))+1
+        log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
+        log_file_buffer = open(log_file, "w")
+    set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
+
+    try:
+        return main(
+            input_files=input_files,
+            output_dir=output_dir,
+            n_invalid=n_invalid,
+            pbar=pbar,
+            store_record_numbers=store_record_numbers,
+            store_timestamp=store_timestamp,
+            time_interval=time_interval,
+            timedate_filenames=timedate_filenames,
+            contiguous_timeseries=contiguous_timeseries,
+        )
+    finally:
+        if log_file_buffer is not None:
+            log_file_buffer.close()
+
+
+def main(
+    input_files: str | Path, 
+    output_dir: str | Path, 
+    n_invalid: int | None = None, 
+    pbar: bool = False, 
+    store_record_numbers: bool = True,
+    store_timestamp: bool = True,
+    time_interval: datetime.timedelta | None = None,
+    timedate_filenames: int | None = None,
+    contiguous_timeseries: int = 0,
+):
+    warn = get_global_warn()
 
     # parse input files (supports glob pattern, directory, or single file)
     if isinstance(input_files, map):
@@ -103,17 +151,21 @@ def camp2ascii(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    
     if n_invalid is not None and (not isinstance(n_invalid, int) or n_invalid <= 0):
         raise ValueError("n_invalid must be a positive integer or None.")
 
     if pbar:
         try:
-            import tqdm
+            from tqdm import tqdm
             total_bytes_to_read = sum(p.stat().st_size for p in input_files)
-            pbar = tqdm(total=total_bytes_to_read, unit="B", unit_scale=True, unit_divisor=1024, desc="Processing files")
+            pbar = tqdm(
+                total=total_bytes_to_read, 
+                unit="B", unit_scale=True, unit_divisor=1024, 
+                desc="Processing files", 
+                mininterval=1.0
+            )
         except ImportError:
-            sys.stderr.write("*** Warning: tqdm not installed; progress bar disabled.\n")
+            warn.warn("tqdm not installed; progress bar disabled.")
             pbar = None
     elif not pbar:
         pbar = None
@@ -137,14 +189,12 @@ def camp2ascii(
         if time_interval.total_seconds() < 60.0:
             raise ValueError(f"time_interval must be at least 60 seconds. Got {time_interval.total_seconds()}s.")
         if time_interval.total_seconds() < 450.0:
-            sys.stderr.write(f" *** Warning: time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.\n")
-            sys.stderr.flush()
+            warn.warn(f"time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.")
 
     if contiguous_timeseries not in (0, 1, 2):
         raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")
     if contiguous_timeseries == 0 and time_interval is not None:
-        sys.stderr.write(" *** Warning: time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.\n")
-        sys.stderr.flush()
+        warn.warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
     contiguous_timeseries = contiguous_timeseries
 
     cfg = Config(
