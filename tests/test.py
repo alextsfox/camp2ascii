@@ -1,78 +1,57 @@
 from unittest import TestCase
-from math import ceil
 from pathlib import Path
+import re
 
 import pandas as pd
 import numpy as np
 
 from camp2ascii import camp2ascii
+import camp2ascii.formats as fmt
+fmt.REPAIR_MISALIGNED_MINOR_FRAMES = False
 
 parent = Path(__file__).parent
 
 class TestCamp2Ascii(TestCase):
-    def test_tob1_basic(self):
+    def test_basic(self):
         in_dir = parent / "raw"
-
-        out_dir = parent / "c2a-basic"
+        out_dir = parent / "c2a"
         out_dir.mkdir(parents=True, exist_ok=True)
-        for f in out_dir.iterdir():
-            f.unlink() if f.is_file() else None
 
-        glob_str = "*TOB1_full*"
-        out_files = camp2ascii(str(in_dir / glob_str), out_dir)
+        try:
+            out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3)
+            for f in out_files:
+                file_type = re.search(r"TOB\d", f.name).group(0)
 
-        my_tob1 = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP", na_values="NAN") for f in out_files])
-        my_tob1["temp_TMx(1)"] = pd.to_datetime(my_tob1["temp_TMx(1)"], format="ISO8601")
-        my_tob1["temp_nsec(1)"] = pd.to_datetime(my_tob1["temp_nsec(1)"], format="ISO8601")
+                my_tob3 = pd.read_csv(f, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
+                my_tob3["TIMESTAMP"] = pd.to_datetime(my_tob3["TIMESTAMP"], format="ISO8601")
 
-        ref_files = list((parent / "cc-basic").glob(glob_str))
-        ref_tob1 = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], na_values="NAN") for f in ref_files])
-        ref_tob1["TIMESTAMP"] = pd.to_datetime(ref_tob1["TIMESTAMP"], format="ISO8601")
-        ref_tob1.set_index("TIMESTAMP", inplace=True)
-        ref_tob1["temp_TMx(1)"] = pd.to_datetime(ref_tob1["temp_TMx(1)"], format="ISO8601")
-        ref_tob1["temp_nsec(1)"] = pd.to_datetime(ref_tob1["temp_nsec(1)"], format="ISO8601")
+                ref_file = list((out_dir.parent / "cc").glob(f"*{f.stem}*"))[0]
+                ref_tob3 = pd.read_csv(ref_file, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
+                ref_tob3["TIMESTAMP"] = pd.to_datetime(ref_tob3["TIMESTAMP"], format="ISO8601")
 
-        # integer overflow errors in CardConvert make this difficult to compare, so drop them
-        my_tob1.drop(columns=["temp_nsec(1)"], inplace=True, errors='ignore')
-        ref_tob1.drop(columns=["temp_nsec(1)"], inplace=True, errors='ignore')
+                if "temp_TMx(1)" in ref_tob3.columns:
+                    ref_tob3["temp_TMx(1)"] = pd.to_datetime(ref_tob3["temp_TMx(1)"], format="ISO8601")
+                    my_tob3["temp_TMx(1)"] = pd.to_datetime(my_tob3["temp_TMx(1)"], format="ISO8601")
+                
+                for col in ref_tob3.columns:
+                    if col in {"TIMESTAMP", "temp_TMx(1)"}:
+                        ref_tob3[col] = ref_tob3[col].astype(np.int64)
+                        my_tob3[col] = my_tob3[col].astype(np.int64)
+                    ref_tob3[col] = ref_tob3[col].astype(np.float64)
+                    my_tob3[col] = my_tob3[col].astype(np.float64)
 
-        ref_tob1.sort_values("RECORD", inplace=True)
-        my_tob1.sort_values("RECORD", inplace=True)
-
-        # Compare temp_TMx(1) as seconds since epoch (datetime64 -> int64 ns)
-        ref_tob1["temp_TMx(1)"] = ref_tob1["temp_TMx(1)"].astype(np.int64)
-        my_tob1["temp_TMx(1)"] = my_tob1["temp_TMx(1)"].astype(np.int64)
-
-        self.assertTrue(np.isclose(ref_tob1.fillna(0).values, my_tob1.fillna(0).values).all(), "TOB1 conversion did not match reference data")
-    
-    def test_tob3_basic(self):
-        in_dir = parent / "raw"
-
-        out_dir = parent / "c2a-basic"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        for f in out_dir.iterdir():
-            f.unlink() if f.is_file() else None
-
-        glob_str = "*TOB3*"
-        out_files = camp2ascii(str(in_dir / glob_str), out_dir)
-
-        my_tob3 = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP", na_values="NAN") for f in out_files])
-
-        ref_files = list((parent / "cc-basic").glob(glob_str))
-        ref_tob3 = pd.concat([pd.read_csv(f, skiprows=[0, 2, 3], na_values="NAN") for f in ref_files])
-        ref_tob3["TIMESTAMP"] = pd.to_datetime(ref_tob3["TIMESTAMP"], format="ISO8601")
-        ref_tob3.set_index("TIMESTAMP", inplace=True)
-
-        ref_tob3 = ref_tob3.loc[~ref_tob3.index.duplicated(keep=False)]
-        my_tob3 = my_tob3.loc[~my_tob3.index.duplicated(keep=False)]
-
-        ref_tob3 = ref_tob3.sort_index()
-        my_tob3 = my_tob3.sort_index()
-
-        timestamps = ref_tob3.index.intersection(my_tob3.index)
-        ref_tob3 = ref_tob3.loc[timestamps]
-        my_tob3 = my_tob3.loc[timestamps]
-
-        self.assertTrue(np.allclose(ref_tob3.values, my_tob3.values, equal_nan=True), "TOB3 conversion did not match reference data")
+                ref_tob3 = ref_tob3.set_index("RECORD")
+                my_tob3 = my_tob3.set_index("RECORD")
 
 
+                # TODO: clock resets in TOB3 files are handled differently between CardConvert and camp2ascii
+                common_idx = ref_tob3.index.union(my_tob3.index)
+                if file_type == "TOB3" and ref_tob3["TIMESTAMP"].diff().diff().abs().max() > 1e5:  # 100us
+                    common_idx = ref_tob3.index.intersection(my_tob3.index)
+                ref_tob3 = ref_tob3.loc[common_idx].sort_index()
+                my_tob3 = my_tob3.loc[common_idx].sort_index()
+
+                self.assertTrue(np.allclose(ref_tob3, my_tob3, equal_nan=True), f"TOB conversion did not match reference data for file {f.name}")
+        finally:
+            for f in out_files:
+                f.unlink(missing_ok=True)

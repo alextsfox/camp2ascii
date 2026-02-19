@@ -166,7 +166,6 @@ def execute_config(cfg: Config) -> list[Path]:
     if cfg.pbar is not None:
         cfg.pbar.n = cfg.pbar.total
         cfg.pbar.refresh()
-        cfg.pbar.close()
     
     if cfg.time_interval is not None:
         output_paths_2 = []

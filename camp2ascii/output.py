@@ -47,7 +47,7 @@ def write_toa5_file(
                     df[col] = df[col].map(lambda x: f"{x:.8f}")
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].map(lambda x: f"{x:.16f}")
-                df[col] = df[col].replace("nan", "NAN")
+                df[col] = df[col].replace("nan", '"NAN"')
 
         for name, csci_dtype in zip(header.names, header.csci_dtypes):
             if csci_dtype in {"NSEC", "SECNANO"}:
@@ -59,7 +59,7 @@ def write_toa5_file(
         df.to_csv(
             output_buffer, 
             index=False, 
-            na_rep="NAN", 
+            na_rep='"NAN"', 
             encoding='ascii', 
             quotechar="'", 
             doublequote=False,
