@@ -1,22 +1,23 @@
 .vscode
 .DS_Store
 
+**.tdf
+**.sh
+
 __pycache__
 *.pyc
 .ipynb_checkpoints
 
-*.stats
-*.log
+**.ipynb
+
+**.stats
+**.log
+**.err
+**.out
 
 publish.txt
 .venv
 .env
 dist/
 build/
-*.egg-info/
-
-parsed
-**.dat
-tests/c2a*
-tests/cc*
-tests/raw*
+**.egg-info/
