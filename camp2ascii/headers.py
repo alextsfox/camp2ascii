@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from io import BufferedReader
 
+
 from .formats import (
     MAX_FIELD,
     MAX_FORMAT,
@@ -25,6 +26,7 @@ from .formats import (
     FP4_NAN,
 )
 from .decode import create_intermediate_datatype
+from .logginghandler import get_global_log
 
 def validate_fields(names, units, processing, csci_dtypes, path: Path):
     if not (len(names) == len(units) == len(processing) == len(csci_dtypes)):
@@ -322,5 +324,8 @@ def parse_file_header(buff: BufferedReader, path: Path) -> tuple[TOB3Header | TO
 
     ascii_header_nbytes = buff.tell()
     buff.seek(0)  # reset file pointer to beginning of file after reading header
+
+    log = get_global_log()
+    log(f"Parsed header for file {path.relative_to(path.parent.parent.parent)}: {header}", level=0)
 
     return header, ascii_header_nbytes

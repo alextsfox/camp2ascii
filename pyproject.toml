@@ -21,7 +21,7 @@ classifiers = [
   "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering",
 ]
-dependencies = []
+dependencies = ["numpy>=1.21.3","pandas>=1.4.0"]
 
 [project.optional-dependencies]
 progress = ["tqdm>=4.0"]
@@ -31,8 +31,11 @@ Repository = "https://github.com/alextsfox/camp2ascii"
 Changelog = "https://github.com/alextsfox/camp2ascii/blob/master/CHANGELOG.md"
 
 [project.scripts]
-camp2ascii = "camp2ascii.cli:main"
+camp2ascii = "camp2ascii.__main__:main"
 
 [tool.setuptools]
-py-modules = ["camp2ascii"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["camp2ascii*"]

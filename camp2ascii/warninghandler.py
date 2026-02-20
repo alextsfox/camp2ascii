@@ -22,17 +22,17 @@ def set_global_warn(mode: str, verbose: int = 1, logfile_buffer:io.BufferedWrite
     elif verbose in {1, 2}:
         if mode == "cli":
             def warn(message: str, **kwargs) -> None:
-                sys.stderr.write(f" *** WARNING: {message}\n")
+                sys.stderr.write(f"WARNING: {message}\n")
                 sys.stderr.flush()
         elif mode == "api":
             def warn(message: str, *, category: Warning=UserWarning, stacklevel: int = 2) -> None:
-                message = "\n *** WARNING: " + message
+                message = "\nWARNING: " + message
                 warnings.warn(message, category=category, stacklevel=stacklevel)
         else:
             raise ValueError(f"Invalid mode: {mode}.")
     elif verbose == 3:
         def warn(message: str) -> None:
-            logfile_buffer.write(f" *** WARNING: {message}\n")
+            logfile_buffer.write(f"WARNING: {message}\n")
     else:
         raise ValueError(f"Invalid verbosity: {verbose}.")
     

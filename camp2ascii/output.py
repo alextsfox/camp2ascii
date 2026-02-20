@@ -4,6 +4,7 @@ import pandas as pd
 
 from .formats import FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
+from .logginghandler import get_global_log
 
 def write_toa5_file(
     df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, 
@@ -66,4 +67,8 @@ def write_toa5_file(
             lineterminator="\n", 
             header=False,
         )
+
+    log = get_global_log()
+    print("huh?")
+    log(f"Wrote output file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")
     return output_path

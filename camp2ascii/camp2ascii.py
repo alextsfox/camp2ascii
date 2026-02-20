@@ -14,7 +14,6 @@ Copyright (C) 2026 Alexander Fox, University of Wyoming
 from __future__ import annotations
 
 from glob import glob
-import sys
 from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
@@ -45,7 +44,7 @@ if TYPE_CHECKING:
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
-        n_invalid: int | None = None, 
+        n_invalid: int | None = 10, 
         pbar: bool = False, 
         store_record_numbers: bool = True,
         store_timestamp: bool = True,
@@ -61,14 +60,15 @@ def camp2ascii(
     input_files : str | Path | list[str | Path]
         Path(s) to input TOB file, directory, or glob pattern.
     output_dir : str | Path
-        Path to output directory (or file when decoding a single input).
+        Path to output directory.
     n_invalid : int | None, optional
-        Stop after encountering N invalid data frames. Default is None (never).
+        Stop after encountering N invalid data frames. Default is 10. None means never stop.
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
         As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
-        store the record number of each line as an additional column in the output. Default is True.
+    store_record_numbers: bool, optional
+        Store the record number of each line as an additional column in the output. Default is True.
     store_timestamp: bool, optional
-        store the timestamp of each line as an additional column in the output. Default is True.
+        Store the timestamp of each line as an additional column in the output. Default is True.
     time_interval: datetime.timedelta | str | None, optional
         Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
         When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
@@ -84,7 +84,6 @@ def camp2ascii(
         2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
     pbar : bool, optional
         Print a progress bar to stdout (requires tqdm). Default is False.
-    store_record_numbers: bool, optional
     verbose: int, optional
         level of verbosity for warnings and informational messages. Default is 1.
         0: no warnings or informational messages will be shown.
@@ -106,8 +105,8 @@ def camp2ascii(
         log_file_number = len(list(out_dir.glob('.camp2ascii_*.log')))+1
         log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
         log_file_buffer = open(log_file, "w")
-    set_global_warn(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
-    set_global_log(mode="cli", verbose=verbose, logfile_buffer=log_file_buffer)
+    set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
+    set_global_log(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
 
     try:
         return main(
@@ -156,6 +155,7 @@ def main(
 
     if n_invalid is not None and (not isinstance(n_invalid, int) or n_invalid <= 0):
         raise ValueError("n_invalid must be a positive integer or None.")
+    if n_invalid == 0: n_invalid = None
 
     if pbar:
         try:
