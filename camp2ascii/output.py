@@ -72,6 +72,5 @@ def write_toa5_file(
         )
 
     log = get_global_log()
-    print("huh?")
     log(f"Wrote output file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")
     return output_path

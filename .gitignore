@@ -8,13 +8,12 @@ __pycache__
 *.pyc
 .ipynb_checkpoints
 
-**.ipynb
 
 **.stats
 **.log
 **.err
 **.out
-tests/partial_frame_test/
+# tests/partial_frame_test/
 
 publish.txt
 .venv
