@@ -168,7 +168,7 @@ def main(
                 mininterval=1.0
             )
         except ImportError:
-            warn.warn("tqdm not installed; progress bar disabled.")
+            warn("tqdm not installed; progress bar disabled.")
             pbar = None
     elif not pbar:
         pbar = None
@@ -192,12 +192,12 @@ def main(
         if time_interval.total_seconds() < 60.0:
             raise ValueError(f"time_interval must be at least 60 seconds. Got {time_interval.total_seconds()}s.")
         if time_interval.total_seconds() < 450.0:
-            warn.warn(f"time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.")
+            warn(f"time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.")
 
     if contiguous_timeseries not in (0, 1, 2):
         raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")
     if contiguous_timeseries == 0 and time_interval is not None:
-        warn.warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
+        warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
     contiguous_timeseries = contiguous_timeseries
 
     cfg = Config(

@@ -5,14 +5,17 @@ import re
 import pandas as pd
 import numpy as np
 
+import sys
+sys.path.append(str((Path(__file__).parent.parent).resolve()))
 from camp2ascii import camp2ascii
 import camp2ascii.formats as fmt
 fmt.REPAIR_MISALIGNED_MINOR_FRAMES = False
 
-parent = Path(__file__).parent
+
 
 class TestCamp2Ascii(TestCase):
     def test_basic(self):
+        parent = Path(__file__).parent.resolve()
         in_dir = parent / "raw"
         out_dir = parent / "c2a"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -54,4 +57,6 @@ class TestCamp2Ascii(TestCase):
                 self.assertTrue(np.allclose(ref_tob3, my_tob3, equal_nan=True), f"TOB conversion did not match reference data for file {f.name}")
         finally:
             for f in out_files:
+                f.unlink(missing_ok=True)
+            for f in out_files.parent.glob("*.log"):
                 f.unlink(missing_ok=True)
