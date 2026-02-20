@@ -1,6 +1,6 @@
 Python program to convert Campbell Scientific TOB files to ASCII (TOA5) files. 
 
-This is a Python port of the same tool, originally written in C by Mathias Bavay: https://git.wsl.ch/bavay/camp2ascii
+This tool is based off of the identically-named camp2ascii written by Mathias Bavay: https://git.wsl.ch/bavay/camp2ascii
 
 # Installation
 
@@ -32,14 +32,14 @@ import matplotlib.pyplot as plt
 # if you installed without pip
 # import sys
 # sys.path.append("/path/to/working/directory/")
-from camp2ascii import camp2ascii
+from camp2ascii import camp2ascii, toa5_to_pandas
 from pathlib import Path
 # convert to ascii as before
 out_files = camp2ascii("./64293_20Hz*.dat", "./ascii_files", pbar=True)
 # read in data using pandas, summarize to 30 minute averages, and plot sonic temperature
 data = pd.concat([
     (
-        pd.read_csv(path, na_values="NAN", parse_dates=["TIMESTAMP"], index_col="TIMESTAMP", skiprows=[0, 2, 3])
+        toa5_to_pandas(path)
         .resample("5min")
         .mean()
     )
@@ -51,4 +51,4 @@ data.plot(y="sonic_temp", style='o')
 plt.show()
 ```
 
-N.B. Note that much of this port was done with the help of AI coding tools, and is currently in alpha. I have yet to implement rigorous testing or to fully clean up the AI-generated code.
+The above code snipped uses `toa5_to_pandas`, but you can also do `pd.read_csv(path, skiprows=[0, 2, 3], na_values=["NAN"], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP")`. However, since integers in python cannot be NAN (but can in TOA5 files) and due to how NANs are stored in TOA5 files (as `"NAN"`, in quotes), pandas has trouble correctly identifying certain datatypes. `toa5_to_pandas` will generally work better for this purpose.

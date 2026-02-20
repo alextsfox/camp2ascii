@@ -1,3 +1,5 @@
+# TODO: output a generator of pandas dataframes that can either be piped to a file or returned as a list of dataframes.
+
 from pathlib import Path
 
 import pandas as pd

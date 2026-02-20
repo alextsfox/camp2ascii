@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camp2ascii"
-version = "0.2.0"
+version = "1.0.0"
 description = "Convert Campbell Scientific TOB1/TOB2/TOB3 files to ASCII (TOA5)."
 readme = "README.md"
 license = { file = "LICENSE" }
