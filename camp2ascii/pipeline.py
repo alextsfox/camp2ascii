@@ -8,7 +8,7 @@ import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import pandas as pd
 
-from .formats import FileType, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH
+from .formats import FileType, Footer, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH
 from .decode import (
     FRAME_HEADER_DTYPE, FINAL_TYPES,
     decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp, decode_bool, decode_bool8
@@ -78,7 +78,10 @@ def compute_timestamps_and_records(
     timestamps = []
     for i, (foot, head) in enumerate(zip(footers_raw, headers)):
         timestamp = decode_frame_header_timestamp(head[0], head[1], header.frame_time_res)
-        record = head[2]
+        if header.file_type == FileType.TOB3:
+            record = head[2]
+        else:
+            record = i*header.data_nlines
         footers[i] = np.array([foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (header.val_stamp, int(0xFFFF ^ header.val_stamp)), timestamp, record], dtype=np.float32)
 
     timestamps = np.empty(nlines, dtype=np.int64)
@@ -101,17 +104,96 @@ def compute_timestamps_and_records(
 
     return timestamps, records, footers
 
+def minor_frames_to_pandas(
+    minor_headers_raw: list[list[bytes]],
+    minor_data_raw: list[list[bytes]],
+    minor_footers_raw: list[list[Footer]],
+    header: TOB3Header | TOB2Header
+) -> pd.DataFrame:
+    """Minor frames need special processing"""
+
+    warn = get_global_warn()
+
+    total_lines = sum(len(m) for m in minor_data_raw)
+    data = np.empty(total_lines, dtype=header.intermediate_dtype)
+    timestamps = np.empty(total_lines, dtype=np.int64)
+    records = np.empty(total_lines, dtype=np.int64)
+
+    data = np.frombuffer(b''.join([b''.join(d) for d in minor_data_raw]), dtype=header.intermediate_dtype)  
+    lineno = 0
+    for i_minor in range(len(minor_data_raw)):
+        for j_sub in range(len(minor_data_raw[i_minor])):
+            sub_header = np.frombuffer(minor_headers_raw[i_minor][j_sub], dtype=FRAME_HEADER_DTYPE[header.file_type])
+            sub_tstart = decode_frame_header_timestamp(sub_header[0], sub_header[1], header.frame_time_res)
+            sub_recstart = sub_header[2] if header.file_type == FileType.TOB3 else -9999  # TODO: figure out how to handle record numbers for TOB2...maybe by interpolating the final dataframe????
+
+            sub_nlines = len(minor_data_raw[i_minor][j_sub]) // header.line_nbytes
+            timestamps[lineno:lineno+sub_nlines] = np.arange(
+                sub_tstart, 
+                sub_tstart + sub_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
+                np.int64(header.rec_intvl*1_000)*1_000_000,
+                dtype=np.int64
+            )
+            records[lineno:lineno+sub_nlines] = np.arange(sub_recstart, sub_recstart + sub_nlines) if sub_recstart != -9999 else -9999  # TODO: handle record numbers for TOB2 minor frames
+            lineno += sub_nlines
+
+    # TODO: this code is repeated from data_to_pandas...refactor to avoid repetition of such a large code block
+    df = pd.DataFrame()
+    for name, t, tname in zip(header.names, header.csci_dtypes, header.intermediate_dtype.names):
+        if t == "FP2":
+            col = decode_fp2(data[tname], fp2_nan=header.fp2_nan)
+        elif t == "FP4":
+            col = decode_fp4(data[tname], fp4_nan=header.fp4_nan)
+        elif t == "NSEC":
+            col = decode_nsec(data[tname])
+        elif t == "SECNANO":
+            col = decode_secnano(data[tname])
+        elif t in {"BOOL", "BOOL4", "BOOL2"}:
+            col = decode_bool(data[tname])
+        elif t == "BOOL8":
+            col = decode_bool8(data[tname])
+        elif "ASCII" in t:
+            t = "ASCII"
+            try:
+                col = data[tname]
+                col.astype(FINAL_TYPES[t])
+            except UnicodeDecodeError:
+                try:
+                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data[tname]])
+                    col = np.where(col == "", "NAN", col)  # convert empty strings to NaN for consistency with TOA5 files, which use "NAN" for missing values in ASCII fields
+                    warn(f"Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. Problematic entries will be filled with 'NAN'. Some data corruption is possible.")
+                except UnicodeDecodeError:
+                    col = np.array(["NAN"]*len(data[tname]))
+                    warn(f"Unrecoverable Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be entirely filled with 'NAN'.")
+        else:
+            col = data[tname]
+        try:
+            df[name] = col.astype(FINAL_TYPES[t])
+        except UnicodeDecodeError:
+            df[name] = ""
+            warn(f"UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be filled with empty strings.")
+
+    df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
+    df["RECORD"] = records
+    df.set_index("TIMESTAMP", inplace=True)
+    return df
+
+
+
+            
+
+
 def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
     with open(path, "rb") as input_buff:
         header, ascii_header_nbytes = parse_file_header(input_buff, path)
         match header.file_type:
             case FileType.TOB3:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
+                headers_raw, data_raw, footers_raw, mask, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
                 nframes = len(headers_raw)
                 nlines = mask.shape[0]
             case FileType.TOB2:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob2_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
+                headers_raw, data_raw, footers_raw, mask, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob2_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
                 nframes = len(headers_raw)
                 nlines = mask.shape[0]
             case FileType.TOB1:
@@ -144,9 +226,18 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             timestamps = (df["SECONDS"].astype(np.int64) + TO_EPOCH)*1_000_000_000 + df["NANOSECONDS"].astype(np.int64)
             df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
             df.set_index("TIMESTAMP", inplace=True)
+    
+    if header.file_type in (FileType.TOB3, FileType.TOB2):
+        minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
 
+    df = pd.concat([df, minor_df])
     df.sort_index(inplace=True)
+    
+    if (df["RECORD"] == -9999).any():
+        df["RECORD"] = df["RECORD"].astype("float64").interpolate(method="linear").replace(-9999, np.nan).astype("int64")
+
     return df, header
+
 
 def execute_config(cfg: Config) -> list[Path]:
     output_paths = []
