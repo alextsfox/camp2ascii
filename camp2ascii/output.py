@@ -1,5 +1,6 @@
 # TODO: output a generator of pandas dataframes that can either be piped to a file or returned as a list of dataframes.
 
+import csv
 from pathlib import Path
 
 import pandas as pd
@@ -38,19 +39,18 @@ def write_toa5_file(
         if not include_record:
             df.drop(columns="RECORD", inplace=True)
 
-        for col in df.select_dtypes('object'):
-            df.loc[:, col] = '"' + df[col] + '"'
+        # for col in df.select_dtypes('object'):
+        #     df.loc[:, col] = '"' + df[col] + '"'
 
         for col in df.select_dtypes('float'):
             if header.file_type != FileType.TOA5:
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "FP2":
-                    df[col] = df[col].map(lambda x: f"{x:.4f}")
+                    df[col] = df[col].round(4)
                 elif csci_dtype in {"IEEE4", "IEEE4B"}:
-                    df[col] = df[col].map(lambda x: f"{x:.8f}")
+                    df[col] = df[col].round(8)
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
-                    df[col] = df[col].map(lambda x: f"{x:.16f}")
-                df[col] = df[col].replace("nan", '"NAN"')
+                    df[col] = df[col].round(16)
 
         for name, csci_dtype in zip(header.names, header.csci_dtypes):
             if csci_dtype in {"NSEC", "SECNANO"}:
@@ -62,11 +62,12 @@ def write_toa5_file(
         df.to_csv(
             output_buffer, 
             index=False, 
-            na_rep='"NAN"', 
-            encoding='ascii', 
-            quotechar="'", 
+            na_rep='NAN', 
             doublequote=False,
+            encoding='ascii',  
+            quoting=csv.QUOTE_NONNUMERIC,
             lineterminator="\n", 
+            escapechar="\\",
             header=False,
         )
 
