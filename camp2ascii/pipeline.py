@@ -114,16 +114,15 @@ def minor_frames_to_pandas(
 
     warn = get_global_warn()
 
-    total_lines = sum(len(m) for m in minor_data_raw)
-    data = np.empty(total_lines, dtype=header.intermediate_dtype)
-    timestamps = np.empty(total_lines, dtype=np.int64)
-    records = np.empty(total_lines, dtype=np.int64)
 
     data = np.frombuffer(b''.join([b''.join(d) for d in minor_data_raw]), dtype=header.intermediate_dtype)  
+    total_lines = data.shape[0]
+    timestamps = np.empty(total_lines, dtype=np.int64)
+    records = np.empty(total_lines, dtype=np.int64)
     lineno = 0
     for i_minor in range(len(minor_data_raw)):
         for j_sub in range(len(minor_data_raw[i_minor])):
-            sub_header = np.frombuffer(minor_headers_raw[i_minor][j_sub], dtype=FRAME_HEADER_DTYPE[header.file_type])
+            sub_header = np.frombuffer(minor_headers_raw[i_minor][j_sub], dtype=FRAME_HEADER_DTYPE[header.file_type])[0]
             sub_tstart = decode_frame_header_timestamp(sub_header[0], sub_header[1], header.frame_time_res)
             sub_recstart = sub_header[2] if header.file_type == FileType.TOB3 else -9999  # TODO: figure out how to handle record numbers for TOB2...maybe by interpolating the final dataframe????
 
@@ -179,10 +178,6 @@ def minor_frames_to_pandas(
     return df
 
 
-
-            
-
-
 def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
     with open(path, "rb") as input_buff:
@@ -228,13 +223,14 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             df.set_index("TIMESTAMP", inplace=True)
     
     if header.file_type in (FileType.TOB3, FileType.TOB2):
+        # TOB1 files do not have minor frames
         minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
-
-    df = pd.concat([df, minor_df])
+        df = pd.concat([df, minor_df])
+        if (df["RECORD"] == -9999).any():
+            df["RECORD"] = df["RECORD"].astype("float64").interpolate(method="linear").replace(-9999, np.nan).astype("int64")
+    
     df.sort_index(inplace=True)
     
-    if (df["RECORD"] == -9999).any():
-        df["RECORD"] = df["RECORD"].astype("float64").interpolate(method="linear").replace(-9999, np.nan).astype("int64")
 
     return df, header
 

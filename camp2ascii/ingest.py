@@ -26,7 +26,7 @@ def parse_footer(footer_bytes: bytes) -> Footer:
         validation = (content >> 16) & 0xFFFF,
     )
 
-def parse_minor_frame(input_buff: bytes, offset: int, frame_nbytes: int, file_type: FileType, val_stamp: int) -> tuple[list[bytes], list[bytes], list[Footer]]:
+def parse_minor_frame(input_buff: BufferedReader, offset: int, frame_nbytes: int, file_type: FileType, val_stamp: int) -> tuple[list[bytes], list[bytes], list[Footer]]:
     """A minor frame flag indicates that the frame is split up into multiple sub-frames.
     The offset of the footer of each sub-frame gives the position of it's start byte within the major frame.
     The last sub-frame is always corrupted, so we start from the second to last one and work our way backwards until we end up at the start of the major frame.
@@ -35,8 +35,8 @@ def parse_minor_frame(input_buff: bytes, offset: int, frame_nbytes: int, file_ty
     The input_buff should start at the very end of the major frame.
     """
     # the last minor frame is always corrupted, so we rewind to the previous one
-    start = input_buff.tell() - frame_nbytes
-    input_buff.seek(-offset - FRAME_FOOTER_NBYTES, 1)
+    start = input_buff.tell()
+    input_buff.seek(frame_nbytes - offset - FRAME_FOOTER_NBYTES, 1)
     minor_footer = parse_footer(input_buff.read(FRAME_FOOTER_NBYTES))
     minor_frame_nbytes = minor_footer.offset
 
@@ -74,9 +74,8 @@ def parse_minor_frame(input_buff: bytes, offset: int, frame_nbytes: int, file_ty
         return None
     return minor_frame_headers_raw, minor_frame_data_raw, minor_frame_footers_raw
 
-def parse_major_frame(input_buff: bytes, frame_nbytes, file_type) -> tuple[bytes, bytes, Footer]:
+def parse_major_frame(input_buff: BufferedReader, frame_nbytes, file_type) -> tuple[bytes, bytes, Footer]:
     # return to beginning of the frame to reader header and data once validation is successful
-    input_buff.seek(-frame_nbytes, 1)  # seek back to the beginning of the frame
 
     header_bytes = input_buff.read(FRAME_HEADER_NBYTES[file_type])
     data_bytes = input_buff.read(frame_nbytes - FRAME_HEADER_NBYTES[file_type] - FRAME_FOOTER_NBYTES)
@@ -192,7 +191,7 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         input_buff.seek(-header.frame_nbytes, 1)  # seek back to the beginning of the frame
         
         if footer.minor_frame:
-            minor_frame_raw = parse_minor_frame(input_buff, footer.offset, header.frame_nbytes)
+            minor_frame_raw = parse_minor_frame(input_buff, footer.offset, header.frame_nbytes, header.file_type, header.val_stamp)
             if minor_frame_raw is not None:
                 minor_headers_raw.append(minor_frame_raw[0])
                 minor_data_raw.append(minor_frame_raw[1])
@@ -202,7 +201,7 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
                 warn(f"Byte count of the minor frame starting at byte {input_buff.tell() - header.frame_nbytes} of {header.path.relative_to(header.path.parent.parent.parent)} doesn't add up to the expected frame size. Discarding.")
             
         else:
-            headers_raw[major_frame], data_raw[major_frame] = parse_major_frame(input_buff, header)
+            headers_raw[major_frame], data_raw[major_frame] = parse_major_frame(input_buff, header.frame_nbytes, header.file_type)  # only parse the major frame if there are no minor frames, since the minor frame parsing will have already validated the major frame's footer and we want to avoid parsing corrupted data in the case of misaligned minor frames
             final_frame = major_frame + 1  # final frame is the last successfully validated one
             major_frame += 1
             log(f"Processed major frame at byte {input_buff.tell() - header.frame_nbytes} in {header.path.relative_to(header.path.parent.parent.parent)}.")
