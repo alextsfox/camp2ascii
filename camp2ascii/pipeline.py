@@ -18,46 +18,46 @@ from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
 from .output import write_toa5_file
 from .restructure import build_matching_file_dict, split_files_by_time_interval
 from .warninghandler import get_global_warn
+from .utils import toa5_to_pandas
 
 if TYPE_CHECKING:
     from tqdm import tqdm
 
-def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
+
+def data_to_pandas(data_structured: np.ndarray, header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
+    """convert data in a structured dtype numpy array to a pandas dataframe.
+    For a TOB2 or TOB3 file, this does not include information from the headers and footers, which is handled separately in compute_timestamps_and_records and minor_frames_to_pandas"""
     warn = get_global_warn()
 
-    # decode the intermediate data types
-    if isinstance(header, TOB1Header):
-        data_raw = [data_raw]
-    data = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)[valid_rows]
     df = pd.DataFrame()
     for name, t, tname in zip(header.names, header.csci_dtypes, header.intermediate_dtype.names):
         if t == "FP2":
-            col = decode_fp2(data[tname], fp2_nan=header.fp2_nan)
+            col = decode_fp2(data_structured[tname], fp2_nan=header.fp2_nan)
         elif t == "FP4":
-            col = decode_fp4(data[tname], fp4_nan=header.fp4_nan)
+            col = decode_fp4(data_structured[tname], fp4_nan=header.fp4_nan)
         elif t == "NSEC":
-            col = decode_nsec(data[tname])
+            col = decode_nsec(data_structured[tname])
         elif t == "SECNANO":
-            col = decode_secnano(data[tname])
+            col = decode_secnano(data_structured[tname])
         elif t in {"BOOL", "BOOL4", "BOOL2"}:
-            col = decode_bool(data[tname])
+            col = decode_bool(data_structured[tname])
         elif t == "BOOL8":
-            col = decode_bool8(data[tname])
+            col = decode_bool8(data_structured[tname])
         elif "ASCII" in t:
             t = "ASCII"
             try:
-                col = data[tname]
+                col = data_structured[tname]
                 col.astype(FINAL_TYPES[t])
             except UnicodeDecodeError:
                 try:
-                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data[tname]])
+                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data_structured[tname]])
                     col = np.where(col == "", "NAN", col)  # convert empty strings to NaN for consistency with TOA5 files, which use "NAN" for missing values in ASCII fields
                     warn(f"Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. Problematic entries will be filled with 'NAN'. Some data corruption is possible.")
                 except UnicodeDecodeError:
-                    col = np.array(["NAN"]*len(data[tname]))
+                    col = np.array(["NAN"]*len(data_structured[tname]))
                     warn(f"Unrecoverable Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be entirely filled with 'NAN'.")
         else:
-            col = data[tname]
+            col = data_structured[tname]
         try:
             df[name] = col.astype(FINAL_TYPES[t])
         except UnicodeDecodeError:
@@ -68,11 +68,11 @@ def data_to_pandas(valid_rows: np.ndarray, data_raw: list[bytes], header: TOB3He
 def compute_timestamps_and_records(
     headers_raw: list[bytes], 
     footers_raw: list[bytes], 
-    valid_rows: np.ndarray, 
-    header: TOB3Header, 
-    nframes: int, 
-    nlines: int
+    header: TOB3Header,  
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """compute the timestamps and record numbers for each line of data based on the raw header and footer bytes for MAJOR frames only."""
+    nframes = len(headers_raw)
+    nlines = nframes*header.data_nlines
     headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw), dtype=FRAME_HEADER_DTYPE[header.file_type]))
     footers = np.empty((nframes, 9), dtype=np.float32)
     timestamps = []
@@ -88,19 +88,19 @@ def compute_timestamps_and_records(
     records = np.empty(nlines, dtype=np.int32)
     for i in range(nframes):
         beg_timestamp = decode_frame_header_timestamp(headers[i, 0], headers[i, 1], header.frame_time_res)
-        if header.file_type == FileType.TOB3:
-            beg_record = headers[i, 2]
-        else:
-            beg_record = i*header.data_nlines
         timestamps[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(
             beg_timestamp, 
             beg_timestamp + header.data_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
             np.int64(header.rec_intvl*1_000)*1_000_000,
             dtype=np.int64
         )
-        records[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(beg_record, beg_record + header.data_nlines)
-    records = records[valid_rows]
-    timestamps = timestamps[valid_rows]
+        if header.file_type == FileType.TOB3:
+            beg_record = headers[i, 2]
+            records[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(beg_record, beg_record + header.data_nlines)
+        else:
+            records[i*header.data_nlines:(i+1)*header.data_nlines] = -9999
+    records = records
+    timestamps = timestamps
 
     return timestamps, records, footers
 
@@ -110,13 +110,12 @@ def minor_frames_to_pandas(
     minor_footers_raw: list[list[Footer]],
     header: TOB3Header | TOB2Header
 ) -> pd.DataFrame:
-    """Minor frames need special processing"""
+    """Minor frames need special processing
+    This handles converting the datablocks from the minor frames to pandas, and then handling the record numbers and timestamps for those lines based on the minor frame headers and footers.
+    """
 
-    warn = get_global_warn()
-
-
-    data = np.frombuffer(b''.join([b''.join(d) for d in minor_data_raw]), dtype=header.intermediate_dtype)  
-    total_lines = data.shape[0]
+    data_structured = np.frombuffer(b''.join([b''.join(d) for d in minor_data_raw]), dtype=header.intermediate_dtype)  
+    total_lines = data_structured.shape[0]
     timestamps = np.empty(total_lines, dtype=np.int64)
     records = np.empty(total_lines, dtype=np.int64)
     lineno = 0
@@ -124,7 +123,7 @@ def minor_frames_to_pandas(
         for j_sub in range(len(minor_data_raw[i_minor])):
             sub_header = np.frombuffer(minor_headers_raw[i_minor][j_sub], dtype=FRAME_HEADER_DTYPE[header.file_type])[0]
             sub_tstart = decode_frame_header_timestamp(sub_header[0], sub_header[1], header.frame_time_res)
-            sub_recstart = sub_header[2] if header.file_type == FileType.TOB3 else -9999  # TODO: figure out how to handle record numbers for TOB2...maybe by interpolating the final dataframe????
+            sub_recstart = sub_header[2] if header.file_type == FileType.TOB3 else -9999 
 
             sub_nlines = len(minor_data_raw[i_minor][j_sub]) // header.line_nbytes
             timestamps[lineno:lineno+sub_nlines] = np.arange(
@@ -133,106 +132,66 @@ def minor_frames_to_pandas(
                 np.int64(header.rec_intvl*1_000)*1_000_000,
                 dtype=np.int64
             )
-            records[lineno:lineno+sub_nlines] = np.arange(sub_recstart, sub_recstart + sub_nlines) if sub_recstart != -9999 else -9999  # TODO: handle record numbers for TOB2 minor frames
+            records[lineno:lineno+sub_nlines] = np.arange(sub_recstart, sub_recstart + sub_nlines) if sub_recstart != -9999 else -9999 
             lineno += sub_nlines
 
     # TODO: this code is repeated from data_to_pandas...refactor to avoid repetition of such a large code block
-    df = pd.DataFrame()
-    for name, t, tname in zip(header.names, header.csci_dtypes, header.intermediate_dtype.names):
-        if t == "FP2":
-            col = decode_fp2(data[tname], fp2_nan=header.fp2_nan)
-        elif t == "FP4":
-            col = decode_fp4(data[tname], fp4_nan=header.fp4_nan)
-        elif t == "NSEC":
-            col = decode_nsec(data[tname])
-        elif t == "SECNANO":
-            col = decode_secnano(data[tname])
-        elif t in {"BOOL", "BOOL4", "BOOL2"}:
-            col = decode_bool(data[tname])
-        elif t == "BOOL8":
-            col = decode_bool8(data[tname])
-        elif "ASCII" in t:
-            t = "ASCII"
-            try:
-                col = data[tname]
-                col.astype(FINAL_TYPES[t])
-            except UnicodeDecodeError:
-                try:
-                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data[tname]])
-                    col = np.where(col == "", "NAN", col)  # convert empty strings to NaN for consistency with TOA5 files, which use "NAN" for missing values in ASCII fields
-                    warn(f"Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. Problematic entries will be filled with 'NAN'. Some data corruption is possible.")
-                except UnicodeDecodeError:
-                    col = np.array(["NAN"]*len(data[tname]))
-                    warn(f"Unrecoverable Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be entirely filled with 'NAN'.")
-        else:
-            col = data[tname]
-        try:
-            df[name] = col.astype(FINAL_TYPES[t])
-        except UnicodeDecodeError:
-            df[name] = ""
-            warn(f"UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be filled with empty strings.")
-
+    df = data_to_pandas(data_structured, header)
+    
     df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
     df["RECORD"] = records
-    df.set_index("TIMESTAMP", inplace=True)
     return df
-
 
 def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
+
     with open(path, "rb") as input_buff:
         header, ascii_header_nbytes = parse_file_header(input_buff, path)
-        match header.file_type:
-            case FileType.TOB3:
-                headers_raw, data_raw, footers_raw, mask, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
-                nframes = len(headers_raw)
-                nlines = mask.shape[0]
-            case FileType.TOB2:
-                headers_raw, data_raw, footers_raw, mask, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob2_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
-                nframes = len(headers_raw)
-                nlines = mask.shape[0]
-            case FileType.TOB1:
-                headers_raw, data_raw, footers_raw, mask = ingest_tob1_data(input_buff, header, ascii_header_nbytes, pbar)
-            case FileType.TOA5:  # TOA5 files are already in ASCII...we just read them in and return them as a dataframe
-                df = pd.read_csv(input_buff, skiprows=[0, 2, 3], na_values=["NAN", "NaN", "nan", "-9999"])
-                if "TIMESTAMP" in df.columns:
-                    df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"], format="ISO8601")
-                    df.set_index("TIMESTAMP", inplace=True)
-                    if pbar is not None:
-                        pbar.update(path.stat().st_size)
-                    return df, header
-        if pbar is not None:
-            pbar.update(path.stat().st_size - input_buff.tell())
 
-    valid_rows = np.where(~mask)[0]
-    df = data_to_pandas(valid_rows, data_raw, header)
-    
-    # decode the intermediate header and footer outputs
-    if header.file_type in (FileType.TOB3, FileType.TOB2):
-        # produce the footers for debugging purposes
-        timestamps, records, footers = compute_timestamps_and_records(headers_raw, footers_raw, valid_rows, header, nframes, nlines)
-        df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-        if "RECORD" not in df:
-            df["RECORD"] = records
-        df.set_index("TIMESTAMP", inplace=True)
-        df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
-    elif header.file_type == FileType.TOB1:
-        if {"SECONDS", "NANOSECONDS"}.issubset(set(header.names)):
-            timestamps = (df["SECONDS"].astype(np.int64) + TO_EPOCH)*1_000_000_000 + df["NANOSECONDS"].astype(np.int64)
+        if header.file_type in (FileType.TOB3, FileType.TOB2):
+            headers_raw, data_raw, footers_raw, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
+            data_structured = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)
+            
+
+            df = data_to_pandas(data_structured, header)
+            # timestamps and records are gleaned from the header information, not from the data blocks
+            timestamps, records, footers = compute_timestamps_and_records(headers_raw, footers_raw, header)
             df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
+            df["RECORD"] = records
+            if "RECORD" not in df:
+                df["RECORD"] = records
+            df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
             df.set_index("TIMESTAMP", inplace=True)
-    
-    if header.file_type in (FileType.TOB3, FileType.TOB2):
-        # TOB1 files do not have minor frames
-        minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
-        df = pd.concat([df, minor_df])
-        if (df["RECORD"] == -9999).any():
-            df["RECORD"] = df["RECORD"].astype("float64").interpolate(method="linear").replace(-9999, np.nan).astype("int64")
-    
-    df.sort_index(inplace=True)
-    
 
+            # minor frames need special handling
+            minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
+            minor_df.set_index("TIMESTAMP", inplace=True)
+
+            df = pd.concat([df, minor_df], ignore_index=False)
+            
+            df.sort_index(inplace=True)
+        elif header.file_type == FileType.TOB1:
+            data_raw = ingest_tob1_data(input_buff, header, ascii_header_nbytes, pbar)
+            data_structured = np.frombuffer(data_raw, dtype=header.intermediate_dtype)
+            # Each line of data in a TOB1 file has everything we need, but the timestamps are stored in a special way
+            df = data_to_pandas(data_structured, header)
+            if {"SECONDS", "NANOSECONDS"}.issubset(set(header.names)):
+                timestamps = (df["SECONDS"].astype(np.int64) + TO_EPOCH)*1_000_000_000 + df["NANOSECONDS"].astype(np.int64)
+                df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
+                df.set_index("TIMESTAMP", inplace=True)
+                df.sort_index(inplace=True)
+
+        nb_proc = input_buff.tell()
+    
+    if header.file_type == FileType.TOA5:
+        df = toa5_to_pandas(path, header, ascii_header_nbytes, pbar)
+        nb_proc = 0
+    
+    if pbar is not None:
+        pbar.update(path.stat().st_size - nb_proc)
+    
     return df, header
+
 
 
 def execute_config(cfg: Config) -> list[Path]:

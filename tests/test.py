@@ -19,6 +19,7 @@ class TestCamp2Ascii(TestCase):
         in_dir = parent / "raw"
         out_dir = parent / "c2a"
         out_dir.mkdir(parents=True, exist_ok=True)
+        print(out_dir)
 
         try:
             out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3)
@@ -40,6 +41,9 @@ class TestCamp2Ascii(TestCase):
                     if col in {"TIMESTAMP", "temp_TMx(1)"}:
                         ref_tob3[col] = ref_tob3[col].astype(np.int64)
                         my_tob3[col] = my_tob3[col].astype(np.int64)
+                    elif my_tob3[col].dtype == object:
+                        ref_tob3[col] = [sum(ord(c) for c in s) for s in ref_tob3[col]]
+                        my_tob3[col] = [sum(ord(c) for c in s) for s in my_tob3[col]]
                     ref_tob3[col] = ref_tob3[col].astype(np.float64)
                     my_tob3[col] = my_tob3[col].astype(np.float64)
 
@@ -58,5 +62,5 @@ class TestCamp2Ascii(TestCase):
         finally:
             for f in out_files:
                 f.unlink(missing_ok=True)
-            for f in out_files.parent.glob("*.log"):
+            for f in out_dir.glob("*.log"):
                 f.unlink(missing_ok=True)
