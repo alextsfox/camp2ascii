@@ -289,12 +289,13 @@ def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header
     line_4 = ",".join(f'"{proc}"' for proc in procs)
     if include_record and "RECORD" not in header.names:
         line_2 = '"RECORD",' + line_2
-        line_3 = '"RN","' + line_3
+        line_3 = '"RN",' + line_3
         line_4 = '"",' + line_4
     if include_timestamp and "TIMESTAMP" not in header.names:
         line_2 = '"TIMESTAMP",' + line_2
-        line_3 = '"TS","' + line_3
+        line_3 = '"TS",' + line_3
         line_4 = '"",' + line_4
+
     
     return (
         line_1 + "\n" +

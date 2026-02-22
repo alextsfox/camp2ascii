@@ -1,5 +1,5 @@
 from camp2ascii import camp2ascii
-camp2ascii("tests/partial_frame_test/raw", "tests/partial_frame_test/c2a", pbar=True, verbose=3)
+camp2ascii("/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_partial3.dat", "tests/partial_frame_test/c2a", pbar=True, verbose=3)
 
 # WARNING: byte 23696 partial_frame_test/raw/TOB3_partial1.dat.
 # bad: 5C90:607C (right open)

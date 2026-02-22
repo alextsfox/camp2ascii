@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from math import floor, ceil
+from math import floor
 from typing import TYPE_CHECKING
 from io import BufferedReader
-import sys
-import re
 
 import numpy as np
 
