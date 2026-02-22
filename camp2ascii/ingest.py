@@ -49,7 +49,10 @@ def parse_minor_frame(input_buff: BufferedReader, offset: int, frame_nbytes: int
         minor_frame_data_raw.append(input_buff.read(minor_frame_nbytes - FRAME_HEADER_NBYTES[file_type] - FRAME_FOOTER_NBYTES))
         minor_frame_footers_raw.append(minor_footer)
 
-        if minor_footer.validation not in (val_stamp, int(0xFFFF ^ val_stamp)):
+        # accept validation stamps within a tolerance...sometimes frames with good-looking data are rejected when they have stamps that are very close to the real one
+        # why this happens is beyond me
+        valid_stamps = {val_stamp, int(0xFFFF ^ val_stamp), val_stamp - 1, val_stamp + 1}
+        if minor_footer.validation not in valid_stamps:
             minor_frame_headers_raw.pop(-1)
             minor_frame_data_raw.pop(-1)
             minor_frame_footers_raw.pop(-1)
@@ -161,7 +164,9 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
         valid_bytes = header.data_nbytes - footer.offset
         valid_lines = floor(valid_bytes / header.line_nbytes)
 
-        if footer.validation not in (header.val_stamp, int(0xFFFF ^ header.val_stamp)):
+        # Accept validation stamp, its XOR inverse, and ±1 tolerance
+        valid_stamps = {header.val_stamp, int(0xFFFF ^ header.val_stamp), header.val_stamp - 1, header.val_stamp + 1}
+        if footer.validation not in valid_stamps:
             log(f"Invalid frame footer found at byte {input_buff.tell() - FRAME_FOOTER_NBYTES} in {header.path.relative_to(header.path.parent.parent.parent)}. This frame will be skipped.")
             skipped_frames += 1
             if n_invalid is not None and skipped_frames >= n_invalid:
