@@ -1,5 +1,15 @@
 from camp2ascii import camp2ascii
-camp2ascii("/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_partial3.dat", "tests/partial_frame_test/c2a", pbar=True, verbose=3)
+bad_files = [
+    "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_long27.dat",
+    "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_long26.dat",
+    "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_long24.dat",
+    "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_long19.dat",
+    "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/camp2ascii/tests/raw/TOB3_long25.dat",
+]
+
+i = 0
+
+camp2ascii(bad_files[0], "tests/partial_frame_test/c2a", pbar=True, verbose=3)
 
 # WARNING: byte 23696 partial_frame_test/raw/TOB3_partial1.dat.
 # bad: 5C90:607C (right open)

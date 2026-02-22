@@ -52,15 +52,19 @@ class TestCamp2Ascii(TestCase):
 
 
                 # TODO: clock resets in TOB3 files are handled differently between CardConvert and camp2ascii
-                common_idx = ref_tob3.index.union(my_tob3.index)
-                if file_type == "TOB3" and ref_tob3["TIMESTAMP"].diff().diff().abs().max() > 1e5:  # 100us
-                    common_idx = ref_tob3.index.intersection(my_tob3.index)
-                ref_tob3 = ref_tob3.loc[common_idx].sort_index()
-                my_tob3 = my_tob3.loc[common_idx].sort_index()
+                # common_idx = ref_tob3.index.union(my_tob3.index)
+                # if file_type == "TOB3" and ref_tob3["TIMESTAMP"].diff().diff().abs().max() > 1e5:  # 100us
+                #     common_idx = ref_tob3.index.intersection(my_tob3.index)
+                # ref_tob3 = ref_tob3.loc[common_idx].sort_index()
+                # my_tob3 = my_tob3.loc[common_idx].sort_index()
 
-                self.assertTrue(np.allclose(ref_tob3, my_tob3, equal_nan=True), f"TOB conversion did not match reference data for file {f.name}")
+                try:
+                    self.assertTrue(np.allclose(ref_tob3, my_tob3, equal_nan=True), f"TOB conversion did not match reference data for file {f.name}")
+                except ValueError:
+                    self.assertTrue(False, f"Dataframes have different shapes for file {f.name}: {ref_tob3.shape} vs {my_tob3.shape}")
         finally:
-            for f in out_files:
-                f.unlink(missing_ok=True)
-            for f in out_dir.glob("*.log"):
-                f.unlink(missing_ok=True)
+            pass
+            # for f in out_files:
+            #     f.unlink(missing_ok=True)
+            # for f in out_dir.glob("*.log"):
+            #     f.unlink(missing_ok=True)

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from tqdm.std import tqdm
 
 def parse_footer(footer_bytes: bytes) -> Footer:
-    content = int.from_bytes(footer_bytes[-4:], "little", signed=True)
+    content = int.from_bytes(footer_bytes[-4:], "little", signed=False)
     return Footer(
         offset = content & 0x7FF,
         file_mark = bool((content >> 11) & 0x1),
