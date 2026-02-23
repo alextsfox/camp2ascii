@@ -185,22 +185,32 @@ def _main(
             timedate_filenames = None
         case _:
             raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
+    # TODO: add tests for timedate_filenames
+    if timedate_filenames:
+        warn("timedate_filenames currently an experimental feature. Use with caution and verify that output files are named as expected.")
 
-    if time_interval is not None:
+    # TODO: add tests for time_interval
+    if time_interval:
         time_interval = pd.Timedelta(time_interval).to_pytimedelta()
         if time_interval.total_seconds() < 60.0:
             warn(f"time_interval of {time_interval.total_seconds()}s may produce many small files. Consider increasing the time interval to at least 60 seconds.")
+        warn("time_interval is currently an experimental feature. Use with caution and verify that output files are split as expected.")
+    if time_interval and not timedate_filenames:
+        warn("time_interval is enabled but timedate_filenames is not. This may produce files with difficult-to-interpret names. Consider enabling timedate_filenames to include the timestamp in the file name.")
 
+    # TODO: add tests for contiguous_timeseries
     if contiguous_timeseries not in (0, 1, 2):
         raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")
-    if contiguous_timeseries == 0 and time_interval is not None:
+    if contiguous_timeseries == 0 and time_interval:
         warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
-    contiguous_timeseries = contiguous_timeseries
+    if contiguous_timeseries:
+        warn("contiguous_timeseries is currently an experimental feature. Use with caution and verify that output files have missing timestamps filled with NANs as expected.")
 
     # TODO: make this work, probably by using a hash of the input headers and storing them in the output directory
     # in a file called .camp2asciihistory or something
     # when we intake files, check the binary file header hash against the hashes in .camp2asciihistory to determine whether to append to an existing file or create a new file
     # whenever using append_to_last_file, always enable new_files_only
+    # low priority
     append_to_last_file = bool(append_to_last_file)
     if append_to_last_file:
         warn("append_to_last_file is not implemented currently. This option will be ignored.")
