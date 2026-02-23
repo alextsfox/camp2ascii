@@ -1,26 +1,6 @@
 import numpy as np
 
-from .formats import FP2_NAN, FP4_NAN, FileType, TO_EPOCH
-
-# class CSType(Enum):
-#     IEEE4 = auto()
-#     IEEE4B = auto()
-#     FP2 = auto()
-#     # FP4 = auto()
-#     # USHORT = auto()
-#     # SHORT = auto()
-#     UINT2 = auto()
-#     INT2 = auto()
-#     UINT4 = auto()
-#     INT4 = auto()
-#     ULONG = auto()
-#     LONG = auto()
-#     NSEC = auto()
-#     SECNANO = auto()
-#     # BOOL = auto()
-#     # BOOL2 = auto()
-#     # BOOL4 = auto()
-#     # ASCII = auto() # TODO: implement ASCII type (ugh)
+from .formats import FP2_NAN, FP4_NAN, UINT2_NAN, FileType, TO_EPOCH
 
 INTERMEDIATE_TYPES = {
     "IEEE4": '<f4',

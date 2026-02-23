@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .formats import FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
+from .formats import UINT2_NAN, FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
 from .logginghandler import get_global_log
 
@@ -14,7 +14,8 @@ def write_toa5_file(
     output_path: Path | str,
     include_timestamp: bool = True, 
     include_record: bool = True,
-    ) -> Path:
+    write_header: bool = True,
+) -> Path:
     output_path = Path(output_path)
     
     if "TIMESTAMP" in header.names and "RECORD" in header.names:
@@ -27,7 +28,8 @@ def write_toa5_file(
         ascii_header = format_toa5_header(header, include_timestamp, include_record)
 
     with open(output_path, "w") as output_buffer:
-        output_buffer.write(ascii_header)
+        if write_header:
+            output_buffer.write(ascii_header)
         if df.index.name == "TIMESTAMP":
             df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
             df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -48,6 +50,8 @@ def write_toa5_file(
                     df[col] = df[col].round(8)
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].round(16)
+                elif csci_dtype == "UINT2":
+                    df[col] = df[col].where(df[col] < UINT2_NAN).astype("uint16")
 
         if header.file_type != FileType.TOA5:
             for name, csci_dtype in zip(header.names, header.csci_dtypes):
@@ -61,7 +65,7 @@ def write_toa5_file(
             df.sort_values("RECORD", inplace=True)
         elif "TIMESTAMP" in df.columns:
             df.sort_values("TIMESTAMP", inplace=True)
-            
+
         df.to_csv(
             output_buffer, 
             index=False, 
