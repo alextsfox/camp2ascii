@@ -1,0 +1,116 @@
+Const scan_intvl = 1
+Const storage_intvl = 5
+Const file_size = 10
+
+Public seq
+Public temp(8)
+Public temp_bool8(8)
+Public temp_nsec(8)
+Public text_val As String * 5
+Public text_val_2 As String * 44
+Public text_val_3 As String * 64
+Public toggle As Boolean
+Units temp = degC
+Units temp_bool8 = unitless
+Const seed As Long = 8472
+Public rand
+
+'' TOB1 with header/timestamp/record# to exercise most types
+'DataTable (TOB1_Full, True, -1)
+'  DataInterval (0, storage_intvl, mSec, 10)
+'  TableFile ("CRD:TOB1_full", 0, -1, 0, file_size, Sec, 0, 0)
+'  Sample (1, text_val, String)
+'  Average (1, temp(1), FP2, True)
+'  Average (1, temp(2), IEEE4, True)
+'  Average (1, temp(3), IEEE8, True)
+'  Maximum (1, temp, FP2, False, True)
+'  Sample (1, temp(1), FP2)
+'  Sample (1, temp(2), IEEE4)
+'  Sample (1, temp(3), IEEE8)
+'  Sample (1, temp(4), UINT2)
+'  Sample (1, temp(5), UINT4)
+'  Sample (1, text_val_2, String)
+'  Sample (1, toggle, Boolean)
+'  Sample (2, temp_bool8, Bool8)
+'  Sample (1, temp(8), Long)
+'  Sample(1, rand, IEEE4)
+'  Sample (1, text_val_3, String)
+'EndTable
+'
+
+' TOB3 on CRD for testing partial frame behavior
+DataTable(TOB3_partial, True, -1)
+  DataInterval(0, storage_intvl, mSec, 10)
+  TableFile("CRD:TOB3_partial", 64, 10, 0, file_size, Sec, 0, 0)
+  Sample(1, text_val, String)
+  Sample(1, text_val_2, String)
+  Sample(1, text_val_3, String)
+EndTable
+
+DataTable(TOB1_partial, True, -1)
+  DataInterval(0, storage_intvl, mSec, 10)
+  TableFile("CRD:TOB1_partial", 0, 10, 0, file_size, Sec, 0, 0)
+  Sample(1, text_val, String)
+  Sample(1, text_val_2, String)
+  Sample(1, text_val_3, String)
+EndTable
+
+'' TOB3 on CRD: to test frame parsing, filemarks, and ring behavior
+'DataTable (TOB3_Long, True, -1)
+'  DataInterval (0, storage_intvl, mSec, 10)
+'  TableFile ("CRD:TOB3_long", 64,10, 0, file_size, Sec, 0, 0)
+'  Sample (1, text_val, String)
+'  Average (1, temp(1), FP2, True)
+'  Average (1, temp(2), IEEE4, True)
+'  Average (1, temp(3), IEEE8, True)
+'  Sample (1, temp(1), IEEE4)
+'  Sample (1, temp(2), FP2)
+'  Sample (1, temp(3), IEEE8)
+'  Sample (1, temp(4), UINT2)
+'  Sample (1, temp(5), UINT4)
+'  Sample (1, text_val_2, String)
+'  Sample (1, toggle, Boolean)
+'  Sample (2, temp_bool8, Bool8)
+'  Sample (1, temp(8), Long)
+'  Sample(1, rand, IEEE4)
+'  Sample (1, text_val_3, String)
+'EndTable
+
+BeginProg
+  Randomize(seed)
+  rand = RND*2 - 1
+  Scan (scan_intvl, mSec, 3, 0)
+    seq = seq + 1
+    rand = 0.99*rand + SQR(1-0.99^2)*(RND*2-1)
+    
+    temp(1) = rand
+    temp(2) = -rand    
+    temp(3) = temp(1) * 1.1
+    temp(4) = seq * 10
+    temp(5) = seq * 1000
+    
+    text_val = Status.SerialNumber
+    text_val_2 = "the quick brown fox jumped over the lazy dog"
+    text_val_3 = "why'd you leave the orange dish rag in the sink? It'll get mold!"
+    
+    toggle = (seq MOD 3) <> 0
+    
+    ' introduce NANs every 7th sample for robustness testing
+    If (seq MOD 7) = 0 Then temp(1) = NAN
+
+    temp_bool8(1) = temp > -2
+    temp_bool8(2) = temp > -1.5
+    temp_bool8(3) = temp > -1
+    temp_bool8(4) = temp > -0.5
+    temp_bool8(5) = temp > 0
+    temp_bool8(6) = temp > 0.5
+    temp_bool8(7) = temp > 1
+    temp_bool8(8) = temp > 1.5
+    
+'    CallTable(TOB3_Long)
+'    CallTable (TOB1_Full)
+    CallTable(TOB3_partial)
+    CallTable(TOB1_partial)
+  NextScan
+EndProg
+

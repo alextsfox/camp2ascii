@@ -1,25 +1,25 @@
 .vscode
 .DS_Store
 
+**.tdf
+**.sh
+
 __pycache__
 *.pyc
 .ipynb_checkpoints
 
-*.stats
-*.log
-test.py
-*.ipynb
+
+**.stats
+**.log
+**.err
+**.out
+tests/c2a/*.dat
+tests/c2a/*.log
+# tests/partial_frame_test/
 
 publish.txt
 .venv
 .env
 dist/
 build/
-*.egg-info/
-
-parsed
-# *.csv
-# *.dat
-*Identifier
-*10Hz*
-*5Min*
+**.egg-info/
