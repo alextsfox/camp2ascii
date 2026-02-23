@@ -306,6 +306,7 @@ def format_toa5_header(header: TOA5Header | TOB1Header | TOB2Header | TOB3Header
 
 def parse_file_header(buff: BufferedReader, path: Path) -> tuple[TOB3Header | TOB2Header | TOB1Header | TOA5Header, int]:
     """Parse the header of a TOB or TOA5 file and return a header object, along with the number of bytes read from the file."""
+    path = Path(path)
     file_type = FileType[buff.read(6).decode("ascii", errors="ignore").strip('"')]
     buff.seek(0)
 
