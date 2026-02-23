@@ -45,7 +45,10 @@ class TestCamp2Ascii(TestCase):
                     if col in {"TIMESTAMP", "temp_TMx(1)"}:
                         ref_tob3[col] = ref_tob3[col].astype(np.int64)
                         my_tob3[col] = my_tob3[col].astype(np.int64)
-                    elif ref_tob3[col].dtype == object or my_tob3[col].dtype == object:
+                    elif (
+                        pd.api.types.is_string_dtype(ref_tob3[col])
+                        or pd.api.types.is_string_dtype(my_tob3[col])
+                    ):
                         ref_tob3[col] = ref_tob3[col].map(_string_to_hash)
                         my_tob3[col] = my_tob3[col].map(_string_to_hash)
                     ref_tob3[col] = ref_tob3[col].astype(np.float64)
