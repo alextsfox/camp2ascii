@@ -39,9 +39,6 @@ def write_toa5_file(
         if not include_record:
             df.drop(columns="RECORD", inplace=True)
 
-        # for col in df.select_dtypes('object'):
-        #     df.loc[:, col] = '"' + df[col] + '"'
-
         for col in df.select_dtypes('float'):
             if header.file_type != FileType.TOA5:
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
@@ -52,13 +49,19 @@ def write_toa5_file(
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].round(16)
 
-        for name, csci_dtype in zip(header.names, header.csci_dtypes):
-            if csci_dtype in {"NSEC", "SECNANO"}:
-                df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+        if header.file_type != FileType.TOA5:
+            for name, csci_dtype in zip(header.names, header.csci_dtypes):
+                if csci_dtype in {"NSEC", "SECNANO"}:
+                    df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if header.file_type == FileType.TOB1:
             df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
 
+        if "RECORD" in df.columns:
+            df.sort_values("RECORD", inplace=True)
+        elif "TIMESTAMP" in df.columns:
+            df.sort_values("TIMESTAMP", inplace=True)
+            
         df.to_csv(
             output_buffer, 
             index=False, 

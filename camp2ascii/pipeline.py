@@ -161,15 +161,12 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             if "RECORD" not in df:
                 df["RECORD"] = records
             df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
-            df.set_index("TIMESTAMP", inplace=True)
 
             # minor frames need special handling
             minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
-            minor_df.set_index("TIMESTAMP", inplace=True)
 
-            df = pd.concat([df, minor_df], ignore_index=False)
-            
-            df.sort_index(inplace=True)
+            df = pd.concat([df, minor_df], ignore_index=True)
+
         elif header.file_type == FileType.TOB1:
             data_raw = ingest_tob1_data(input_buff, header, ascii_header_nbytes, pbar)
             data_structured = np.frombuffer(data_raw, dtype=header.intermediate_dtype)
@@ -178,14 +175,26 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             if {"SECONDS", "NANOSECONDS"}.issubset(set(header.names)):
                 timestamps = (df["SECONDS"].astype(np.int64) + TO_EPOCH)*1_000_000_000 + df["NANOSECONDS"].astype(np.int64)
                 df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-                df.set_index("TIMESTAMP", inplace=True)
-                df.sort_index(inplace=True)
+    
 
         nb_proc = input_buff.tell()
     
+
+    
     if header.file_type == FileType.TOA5:
-        df = toa5_to_pandas(path, header, ascii_header_nbytes, pbar)
+        df = toa5_to_pandas(path)
+        df.reset_index(inplace=True)
+        if "index" in df.columns:
+            df.rename(columns={"index": "RECORD"}, inplace=True)
         nb_proc = 0
+
+    if "RECORD" in df:
+        df.sort_values("RECORD", inplace=True)
+        df = df[["RECORD"] + [col for col in df.columns if col != "RECORD"]]
+    elif "TIMESTAMP" in df:
+        df.sort_values("TIMESTAMP", inplace=True)
+    if "TIMESTAMP" in df:
+        df = df[["TIMESTAMP"] + [col for col in df.columns if col != "TIMESTAMP"]]
     
     if pbar is not None:
         pbar.update(path.stat().st_size - nb_proc)
@@ -199,7 +208,7 @@ def execute_config(cfg: Config) -> list[Path]:
     nbytes_proc_total = 0  # for progress bar tracking
     for path in cfg.input_files:
         df, header = process_file(path, cfg.stop_cond, pbar=cfg.pbar)
-        if cfg.timedate_filenames is not None and df.index.name == "TIMESTAMP":
+        if (cfg.timedate_filenames is not None and cfg.time_interval is None):
             out_path = Path(cfg.out_dir) / ("TOA5_" + path.stem + "_" + df.index.min().strftime(cfg.timedate_filenames) + path.suffix)
         else:
             out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)

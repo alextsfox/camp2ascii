@@ -108,6 +108,7 @@ def camp2ascii(
     set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
 
+    # TODO: sort out how we process indices and stuff
     try:
         return main(
             input_files=input_files,
@@ -190,9 +191,7 @@ def main(
     if time_interval is not None:
         time_interval = pd.Timedelta(time_interval).to_pytimedelta()
         if time_interval.total_seconds() < 60.0:
-            raise ValueError(f"time_interval must be at least 60 seconds. Got {time_interval.total_seconds()}s.")
-        if time_interval.total_seconds() < 450.0:
-            warn(f"time_interval of {time_interval.total_seconds()//60}m{time_interval.total_seconds()%60:02}s may produce many small files. Consider increasing the time interval to at least 15 minutes.")
+            warn(f"time_interval of {time_interval.total_seconds()}s may produce many small files. Consider increasing the time interval to at least 60 seconds.")
 
     if contiguous_timeseries not in (0, 1, 2):
         raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")

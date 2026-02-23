@@ -69,14 +69,17 @@ def split_files_by_time_interval(file_list: list[Path | str], cfg: Config) -> li
 
     chad = None
     df, header = process_file(time_sorted_filenames[0])
+
+    df = df.set_index("TIMESTAMP").sort_index()
     # creating a generator to avoid accounting errors
-    time_sorted_processed_files = (process_file(fn)[0] for fn in time_sorted_filenames[1:])
+    time_sorted_processed_files = (process_file(fn)[0].set_index("TIMESTAMP").sort_index() for fn in time_sorted_filenames[1:])
 
     fn_ref = Path(time_sorted_filenames[0])
     out_file_base = cfg.out_dir / fn_ref.name
 
-    freq = df.index.diff().min()
-    mode_time_diff = df.index.diff().total_seconds().value_counts().sort_values().index[-1]
+    nondupes = ~df.index.duplicated() 
+    freq = df.loc[nondupes].index.diff().min()
+    mode_time_diff = df.loc[nondupes].index.diff().total_seconds().value_counts().sort_values().index[-1]
     if mode_time_diff != freq.total_seconds():
         warn(f"detected irregular timestamp intervals in file {fn_ref.name}. Minimum interval is {freq}, but the most common interval is {mode_time_diff}. Using {freq} as the interval.")
 
@@ -109,18 +112,19 @@ def split_files_by_time_interval(file_list: list[Path | str], cfg: Config) -> li
         # split dataframe into the requested time intervals and write to disk
         time_intervals = pd.interval_range(start=start_time, end=end_time, freq=cfg.time_interval)
         for interval in time_intervals:
+            left, right = interval.left, interval.right - freq
             match cfg.contiguous_timeseries:
                 case 0:
-                    interval_df = df.loc[max(interval.left, df.index.min()):min(interval.right, df.index.max())]
+                    interval_df = df.loc[max(left, df.index.min()):min(right, df.index.max())]
                 case 1:
-                    interval_df = make_timeseries_contiguous(df.loc[interval.left:interval.right], interval.left, interval.right, freq)
+                    interval_df = make_timeseries_contiguous(df.loc[left:right], left, right, freq)
                 case 2:
-                    interval_df = df.loc[interval.left:interval.right]
+                    interval_df = df.loc[left:right]
 
             if cfg.timedate_filenames is not None:
-                output_path = out_file_base.with_stem(f"{out_file_base.stem}{i}_{interval.left.strftime(cfg.timedate_filenames)}")
+                output_path = out_file_base.with_stem(f"{out_file_base.stem}_{i}_{interval.left.strftime(cfg.timedate_filenames)}")
             else:
-                output_path = out_file_base.with_stem(f"{out_file_base.stem}{i}")
+                output_path = out_file_base.with_stem(f"{out_file_base.stem}_{i}")
             output_paths.append(output_path)
             
             write_toa5_file(interval_df, header, output_path, cfg.store_timestamp, cfg.store_record_numbers)

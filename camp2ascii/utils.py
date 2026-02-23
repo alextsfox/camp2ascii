@@ -13,7 +13,7 @@ from .warninghandler import set_global_warn, _GLOBAL_WARN
 
 def toa5_to_pandas(
     path: str | Path, 
-    index:Literal["TIMESTAMP", "RECORD"] | None = "TIMESTAMP", 
+    index_col:Literal["TIMESTAMP", "RECORD"] | None = "RECORD", 
     sort_index: bool = True,
     na_values=["NAN", '"NAN"', "-9999"],
     int_na_fill_value: int = -9999,
@@ -26,8 +26,8 @@ def toa5_to_pandas(
     ----------
     path : str | Path
         Path to the TOA5 file.
-    index : "TIMESTAMP" | "RECORD" | None, optional
-        Column to set as index. If None, the dataframe will not have an index column.
+    index_col : "TIMESTAMP" | "RECORD" | None, optional
+        Column to set as index. If None, the dataframe will not have an index column. Default is "RECORD".
     sort_index : bool, optional
         Whether to sort the dataframe by the index after setting it. Default is True.
     na_values : list, optional
@@ -104,10 +104,10 @@ def toa5_to_pandas(
                 # quit as soon as we fail to parse a non-na value
                 break
 
-    if index not in df.columns:
-        raise ValueError(f"Index column {index} not found in {path.relative_to(path.parent.parent.parent)} columns.")
-    if index is not None and index in df.columns:
-        df.set_index(index, inplace=True)
+    if index_col not in df.columns:
+        raise ValueError(f"Index column {index_col} not found in {path.relative_to(path.parent.parent.parent)} columns.")
+    if index_col is not None:
+        df.set_index(index_col, inplace=True)
         if sort_index:
             df.sort_index(inplace=True)
     
