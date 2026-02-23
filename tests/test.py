@@ -24,7 +24,6 @@ class TestCamp2Ascii(TestCase):
         try:
             out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3)
             for f in out_files:
-                file_type = re.search(r"TOB\d", f.name).group(0)
 
                 my_tob3 = pd.read_csv(f, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
                 my_tob3["TIMESTAMP"] = pd.to_datetime(my_tob3["TIMESTAMP"], format="ISO8601")
@@ -41,7 +40,7 @@ class TestCamp2Ascii(TestCase):
                     if col in {"TIMESTAMP", "temp_TMx(1)"}:
                         ref_tob3[col] = ref_tob3[col].astype(np.int64)
                         my_tob3[col] = my_tob3[col].astype(np.int64)
-                    elif my_tob3[col].dtype == object:
+                    elif my_tob3[col].dtype == object or ref_tob3[col].dtype == object:
                         ref_tob3[col] = [sum(ord(c) for c in s) for s in ref_tob3[col]]
                         my_tob3[col] = [sum(ord(c) for c in s) for s in my_tob3[col]]
                     ref_tob3[col] = ref_tob3[col].astype(np.float64)
