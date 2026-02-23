@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
   { name = "Alexander Fox" }
 ]
-keywords = ["campbell", "tob", "toa5", "logger", "cardconvert", "csci", "tob1", "tob2", "tob3", "card convert"]
+keywords = ["campbell", "tob", "toa5", "logger", "cardconvert", "csci", "tob1", "tob2", "tob3", "card convert", "tob32", "CSIDFT_convert", "loggernet"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
