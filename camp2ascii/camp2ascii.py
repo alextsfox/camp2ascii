@@ -40,16 +40,16 @@ if TYPE_CHECKING:
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
-        n_invalid: int | None = 10, 
+        n_invalid: int = 0, 
         pbar: bool = False, 
-        store_record_numbers: bool = True,
-        store_timestamp: bool = True,
         time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
         contiguous_timeseries: int = 0,
         verbose: int = 1,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
+
+    Binary files will be read from `input_files`, converted to ASCII (TOA5 format), and written to `output_dir`.
     
     Parameters
     ----------
@@ -57,14 +57,10 @@ def camp2ascii(
         Path(s) to input TOB file, directory, or glob pattern.
     output_dir : str | Path
         Path to output directory.
-    n_invalid : int | None, optional
-        Stop after encountering N invalid data frames. Default is 10. None means never stop.
+    n_invalid : int, optional
+        Stop after encountering N invalid data frames. Default is 0 (never stop).
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
         As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
-    store_record_numbers: bool, optional
-        Store the record number of each line as an additional column in the output. Default is True.
-    store_timestamp: bool, optional
-        Store the timestamp of each line as an additional column in the output. Default is True.
     time_interval: datetime.timedelta | str | None, optional
         Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
         When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
@@ -93,6 +89,7 @@ def camp2ascii(
 
     """
 
+
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -110,8 +107,8 @@ def camp2ascii(
             output_dir=output_dir,
             n_invalid=n_invalid,
             pbar=pbar,
-            store_record_numbers=store_record_numbers,
-            store_timestamp=store_timestamp,
+            store_record_numbers=True,
+            store_timestamp=True,
             time_interval=time_interval,
             timedate_filenames=timedate_filenames,
             contiguous_timeseries=contiguous_timeseries,

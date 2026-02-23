@@ -30,12 +30,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         required=True,
         help="Path to output directory.",
     )
-    parser.add_argument("-n-invalid", dest="n_invalid", type=int, default=10, help="Stop after encountering N invalid data frames. Default is 10. 0 means never stop.\n"\
+    parser.add_argument("-n-invalid", dest="n_invalid", type=int, default=0, help="Stop after encountering N invalid data frames. Default is 0 (never stop).\n"\
         "Only applies to TOB2 + TOB3 files.\n"\
-        "For reference, ~2-10 lines of data per frame per frame is typical.")
+        "For reference, ~2-10 lines of data per frame per frame is typical. 10 is a reasonable value.")
     parser.add_argument("-pbar", dest="pbar", action="store_true", help="Print a progress bar to stdout (requires tqdm).")
-    parser.add_argument("-hide-record-numbers", dest="hide_record_numbers", action="store_true", help="Omit the record number of each line as an additional column in the output.")
-    parser.add_argument("-hide-timestamp", dest="hide_timestamp", action="store_true", help="Omit the timestamp of each line as an additional column in the output.")
     parser.add_argument("-verbose", dest="verbose", type=int, choices=[0, 1, 2, 3], default=1, help="level of verbosity for warnings and informational messages. Default is 1.\n"\
         "0: no warnings or informational messages will be shown.\n"\
         "1: show warnings (default)\n"\
@@ -74,8 +72,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output_dir=out_dir,
             n_invalid=n_invalid,
             pbar=args.pbar,
-            store_record_numbers=not args.hide_record_numbers,
-            store_timestamp=not args.hide_timestamp,
+            store_record_numbers=True,
+            store_timestamp=True,
             time_interval=args.time_interval,
             timedate_filenames=args.timedate_filenames,
             contiguous_timeseries=args.contiguous_timeseries,
