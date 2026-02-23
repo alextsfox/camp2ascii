@@ -15,7 +15,8 @@ __pycache__
 **.out
 tests/c2a/*.dat
 tests/c2a/*.log
-# tests/partial_frame_test/
+*.py
+*.ipynb
 
 publish.txt
 .venv
