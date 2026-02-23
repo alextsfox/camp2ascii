@@ -6,7 +6,7 @@ from typing import Optional
 from pathlib import Path
 import sys
 
-from .camp2ascii import main as c2a_main
+from .camp2ascii import _main as c2a_main
 from .warninghandler import set_global_warn
 from .logginghandler import set_global_log
 
@@ -79,6 +79,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             time_interval=args.time_interval,
             timedate_filenames=args.timedate_filenames,
             contiguous_timeseries=args.contiguous_timeseries,
+            append_to_last_file=False,
         )
 
         sys.stdout.write("\n".join(str(p) for p in out_files) + "\n")

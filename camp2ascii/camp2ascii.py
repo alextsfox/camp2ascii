@@ -9,8 +9,6 @@ To use as a standalone script, run it from the command line with input and outpu
 Copyright (C) 2026 Alexander Fox, University of Wyoming
 """
 
-# TODO: clean up stdout and stderr
-
 from __future__ import annotations
 
 from glob import glob
@@ -39,8 +37,6 @@ if TYPE_CHECKING:
 #     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
 # append_to_last_file: bool, optional
 #     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
-# attempt_to_repair_corrupt_frames: bool, optional
-#     attempt to repair corrupt frames. If true, the converter will attempt to recover data from frames that fail certain validation checks. Use with caution, since repairs are not guaranteed to succeed and may fail silently. Default is False.
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
@@ -108,9 +104,8 @@ def camp2ascii(
     set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
 
-    # TODO: sort out how we process indices and stuff
     try:
-        return main(
+        return _main(
             input_files=input_files,
             output_dir=output_dir,
             n_invalid=n_invalid,
@@ -120,13 +115,14 @@ def camp2ascii(
             time_interval=time_interval,
             timedate_filenames=timedate_filenames,
             contiguous_timeseries=contiguous_timeseries,
+            append_to_last_file=False,
         )
     finally:
         if log_file_buffer is not None:
             log_file_buffer.close()
 
 
-def main(
+def _main(
     input_files: str | Path, 
     output_dir: str | Path, 
     n_invalid: int | None = None, 
@@ -136,7 +132,9 @@ def main(
     time_interval: datetime.timedelta | None = None,
     timedate_filenames: int | None = None,
     contiguous_timeseries: int = 0,
+    append_to_last_file: bool = False,
 ):
+    """For the primary API function, see camp2ascii()."""
     warn = get_global_warn()
 
     # parse input files (supports glob pattern, directory, or single file)
@@ -199,6 +197,15 @@ def main(
         warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
     contiguous_timeseries = contiguous_timeseries
 
+    # TODO: make this work, probably by using a hash of the input headers and storing them in the output directory
+    # in a file called .camp2asciihistory or something
+    # when we intake files, check the binary file header hash against the hashes in .camp2asciihistory to determine whether to append to an existing file or create a new file
+    # whenever using append_to_last_file, always enable new_files_only
+    append_to_last_file = bool(append_to_last_file)
+    if append_to_last_file:
+        warn("append_to_last_file is not implemented currently. This option will be ignored.")
+        append_to_last_file = False
+    
     cfg = Config(
         input_files=input_files,
         out_dir=out_dir,
@@ -209,8 +216,14 @@ def main(
         time_interval=time_interval,
         timedate_filenames=timedate_filenames,
         contiguous_timeseries=contiguous_timeseries,
+        append_to_last_file=append_to_last_file,
     )
 
+    # TODO: append to last file is unsafe, because it could result in data scrambling if we run this twice in the same output directory
+    # also we need to make sure that things are sorted by time
+    # consider also just not using this argument
+    # ach but this won't work for TOA5 files because they don't have file start timestamps
+    # and now that I think about it, neither do TOB1 files either.
     final_output_paths = execute_config(cfg)
 
     return final_output_paths

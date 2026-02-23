@@ -19,11 +19,8 @@ NB_MAX_FIELDS = 200  # maximum number of fields in a frame
 MAX_LINE = 2048  # maximum length of a header line in bytes
 MAX_FORMAT = 40  # maximum number of data lines in a frame
 TO_EPOCH = 631_152_000  # seconds between Unix epoch and Campbell epoch
-UINT2_NAN = 65535  # NAN for UINT2 on all loggers
-TRUNC_FACTOR = 1.00001
-TM_Y0 = 1900  # Campbell epoch year
-REPAIR_MISALIGNED_MINOR_FRAMES = False  # whether to attempt to salvage valid data lines from minor frames with non-zero offsets. use with caution
-# TODO: figure out why my frames have offset timestamps from cardconvert's when repairing minor frames.
+# TRUNC_FACTOR = 1.00001  # not used
+# TM_Y0 = 1900  # Campbell epoch year, not used
 
 # hard-coded NAN values
 # if abs(number) >= xxx_NAN, then it is considered a NAN
@@ -43,6 +40,7 @@ class Config:
     timedate_filenames: str | None
     time_interval: datetime.timedelta | None
     contiguous_timeseries: int
+    append_to_last_file: bool
 
 class FileType(Enum):
     TOB1 = auto()
@@ -183,8 +181,8 @@ __all__ = [
     "FP2_NAN",
     "FP4_NAN",
     "UINT2_NAN",
-    "TRUNC_FACTOR",
-    "TM_Y0",
+    # "TRUNC_FACTOR",
+    # "TM_Y0",
     "FileType",
     "FRAME_HEADER_NBYTES",
     "FRAME_FOOTER_NBYTES",

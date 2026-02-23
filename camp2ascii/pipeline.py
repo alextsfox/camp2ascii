@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-import sys
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -16,7 +15,7 @@ from .decode import (
 from .headers import parse_file_header
 from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
 from .output import write_toa5_file
-from .restructure import build_matching_file_dict, split_files_by_time_interval
+from .restructure import build_matching_file_dict, split_files_by_time_interval, order_files_by_time
 from .warninghandler import get_global_warn
 from .utils import toa5_to_pandas
 
@@ -134,8 +133,7 @@ def minor_frames_to_pandas(
             )
             records[lineno:lineno+sub_nlines] = np.arange(sub_recstart, sub_recstart + sub_nlines) if sub_recstart != -9999 else -9999 
             lineno += sub_nlines
-
-    # TODO: this code is repeated from data_to_pandas...refactor to avoid repetition of such a large code block
+            
     df = data_to_pandas(data_structured, header)
     
     df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
@@ -201,9 +199,14 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
     
     return df, header
 
-
-
 def execute_config(cfg: Config) -> list[Path]:
+
+    # find the most recent files in the output directory, grouped by header hash
+    if cfg.append_to_last_file:
+        last_file_dict = build_matching_file_dict(cfg.out_dir.glob("TOA5_*.dat"))
+        for k, group in last_file_dict.items():
+            last_file_dict[k] = order_files_by_time(group)[0][-1]
+    
     output_paths = []
     nbytes_proc_total = 0  # for progress bar tracking
     for path in cfg.input_files:
@@ -221,10 +224,32 @@ def execute_config(cfg: Config) -> list[Path]:
     if cfg.pbar is not None:
         cfg.pbar.n = cfg.pbar.total
         cfg.pbar.refresh()
-    
+
+    matching_file_dict = build_matching_file_dict(output_paths)
+    if cfg.append_to_last_file:
+        # update the last_file_dict with any new files whose header hashes are not already in last_file_dict
+        for k, group in matching_file_dict.items():
+            first_new_file = order_files_by_time(group)[0][0]
+            last_file_dict.setdefault(k, first_new_file)
+        for k, last_path in last_file_dict.items():
+            with open(last_path, "a") as last_file_buff:
+                for new_path in matching_file_dict.get(k, []):
+                    # don't want to append a file to itself!
+                    if new_path == last_path:
+                        continue
+                    with open(new_path, "r") as new_file_buff:
+                        # skip 4 header lines
+                        for _ in range(4):
+                            next(new_file_buff, None) 
+                        last_file_buff.write(new_file_buff.read())
+        output_paths_2 = list(last_file_dict.values())
+        for path in output_paths:
+            if path not in output_paths_2:
+                path.unlink()
+        output_paths = output_paths_2
+
     if cfg.time_interval is not None:
         output_paths_2 = []
-        matching_file_dict = build_matching_file_dict(output_paths)
         for matching_files in matching_file_dict.values():
             output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
         for path in output_paths:

@@ -8,7 +8,7 @@ import numpy as np
 
 from .warninghandler import get_global_warn
 from .logginghandler import get_global_log
-from .formats import FileType, Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header, REPAIR_MISALIGNED_MINOR_FRAMES
+from .formats import FileType, Footer, FRAME_FOOTER_NBYTES, FRAME_HEADER_NBYTES, TOB3Header, TOB2Header, TOB1Header
 
 if TYPE_CHECKING:
     from tqdm.std import tqdm
