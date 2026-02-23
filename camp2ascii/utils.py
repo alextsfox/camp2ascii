@@ -8,6 +8,8 @@ import pandas as pd
 
 from .headers import parse_file_header
 from .formats import FileType
+from .logginghandler import set_global_log, _GLOBAL_LOG
+from .warninghandler import set_global_warn, _GLOBAL_WARN
 
 def toa5_to_pandas(
     path: str | Path, 
@@ -36,7 +38,10 @@ def toa5_to_pandas(
         Whether to attempt to parse any columns that look like timestamps as datetime objects. Default is True.
     """
 
-
+    if _GLOBAL_WARN is None:
+        set_global_warn("api")
+    if _GLOBAL_LOG is None:
+        set_global_log("api")
 
     with open(path, "rb") as input_buff:
         header, header_nbytes = parse_file_header(input_buff, path)
