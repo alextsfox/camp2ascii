@@ -149,9 +149,10 @@ def _main(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if n_invalid is not None and (not isinstance(n_invalid, int) or n_invalid <= 0):
-        raise ValueError("n_invalid must be a positive integer or None.")
-    if n_invalid == 0: n_invalid = None
+    if n_invalid == 0:
+        n_invalid = None
+    if n_invalid is not None and not isinstance(n_invalid, int):
+        raise ValueError("n_invalid must be a non-negative integer or None.")
 
     if pbar:
         try:
