@@ -6,7 +6,7 @@
 * De-sloppification of the codebase, removing most of the AI-generated code
 * Added utility for reading TOA5 files into pandas dataframes with automatic type detection
 * Added better logging and warning handlers
-* 
+* Enabled options for splitting output files into specified time intervals, and for making timeseries data contiguous (filling in missing timestamps with NaNs)
 
 # 0.2.0
 * Added functionality to match several CardConvert options, will continue to add more in future releases
