@@ -37,11 +37,11 @@ class TestCamp2Ascii(TestCase):
                     my_tob3["temp_TMx(1)"] = pd.to_datetime(my_tob3["temp_TMx(1)"], format="ISO8601")
                 
                 for col in ref_tob3.columns:
-                    print(col, ref_tob3[col].dtype, my_tob3[col].dtype, "")
+                    # print(col, ref_tob3[col].dtype, my_tob3[col].dtype, "")
                     if col in {"TIMESTAMP", "temp_TMx(1)"}:
                         ref_tob3[col] = ref_tob3[col].astype(np.int64)
                         my_tob3[col] = my_tob3[col].astype(np.int64)
-                    elif my_tob3[col].dtype == object or ref_tob3[col].dtype == object:
+                    elif my_tob3[col].dtype in {object, str} or ref_tob3[col].dtype in {object, str}:
                         ref_tob3[col] = [sum(ord(c) for c in s) for s in ref_tob3[col]]
                         my_tob3[col] = [sum(ord(c) for c in s) for s in my_tob3[col]]
                     ref_tob3[col] = ref_tob3[col].astype(np.float64)
