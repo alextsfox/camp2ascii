@@ -1,5 +1,6 @@
 # 1.0.1
 * Fixed a bug where record intervals of hours, minutes, and seconds were raising an error.
+* Fixed a bug where output files could overwrite each other if the input files had the same name and the `timedate_filenames` option was not used.
 
 # 1.0.0
 * Major changes
