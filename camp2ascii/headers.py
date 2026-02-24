@@ -80,19 +80,22 @@ def parse_tob3_header(header: list[str], path: Path) -> TOB3Header:
     ) = next(reader)
 
     val = float(rec_intvl.strip().split(' ')[0])
+    multiplier = None
     if "HOUR" in rec_intvl.upper():
         multiplier = 3600.0
     elif "MIN" in rec_intvl.upper():
         multiplier = 60.0
     elif "SEC" in rec_intvl.upper():
         multiplier = 1.0
+    # handle sub-second sampling intervals
     if "MSEC" in rec_intvl.upper():
         multiplier = 1e-3
     elif "USEC" in rec_intvl.upper():
         multiplier = 1e-6
     elif "NSEC" in rec_intvl.upper():
         multiplier = 1e-9
-    else:
+    
+    if multiplier is None:
         raise ValueError(f"Cannot decode sampling resolution: {rec_intvl}")
     rec_intvl = val * multiplier
 
