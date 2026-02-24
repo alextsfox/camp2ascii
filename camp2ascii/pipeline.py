@@ -74,15 +74,17 @@ def compute_timestamps_and_records(
     nlines = nframes*header.data_nlines
     headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw), dtype=FRAME_HEADER_DTYPE[header.file_type]))
     footers = np.empty((nframes, 9), dtype=np.float32)
-    timestamps = []
-    for i, (foot, head) in enumerate(zip(footers_raw, headers)):
-        timestamp = decode_frame_header_timestamp(head[0], head[1], header.frame_time_res)
-        if header.file_type == FileType.TOB3:
-            record = head[2]
-        else:
-            record = i*header.data_nlines
-        footers[i] = np.array([foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (header.val_stamp, int(0xFFFF ^ header.val_stamp)), timestamp, record], dtype=np.float32)
 
+    # index footers...mostly for debugging for now
+    # for i, (foot, head) in enumerate(zip(footers_raw, headers)):
+    #     timestamp = decode_frame_header_timestamp(head[0], head[1], header.frame_time_res)
+    #     if header.file_type == FileType.TOB3:
+    #         record = head[2]
+    #     else:
+    #         record = -9999
+    #     footers[i] = np.array([foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (header.val_stamp, int(0xFFFF ^ header.val_stamp)), timestamp, record], dtype=np.float32)
+
+    # create timestamps and records for each record
     timestamps = np.empty(nlines, dtype=np.int64)
     records = np.empty(nlines, dtype=np.int32)
     for i in range(nframes):
@@ -156,8 +158,6 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             timestamps, records, footers = compute_timestamps_and_records(headers_raw, footers_raw, header)
             df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
             df["RECORD"] = records
-            if "RECORD" not in df:
-                df["RECORD"] = records
             df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
 
             # minor frames need special handling

@@ -1,3 +1,6 @@
+# 1.1.0
+* Stricter handling of record numbers
+
 # 1.0.0
 * Major changes
 * Transitioned 90% of the data parsing and management to numpy
