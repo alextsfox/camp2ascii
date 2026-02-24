@@ -1,5 +1,5 @@
-# 1.1.0
-* Stricter handling of record numbers
+# 1.0.1
+* Fixed a bug where record intervals of hours, minutes, and seconds were raising an error.
 
 # 1.0.0
 * Major changes
