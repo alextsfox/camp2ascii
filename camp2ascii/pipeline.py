@@ -203,14 +203,13 @@ def execute_config(cfg: Config) -> list[Path]:
     output_paths = []
     for i, path in enumerate(cfg.input_files):
         df, header = process_file(path, cfg.stop_cond)
-        if (cfg.timedate_filenames is not None and cfg.time_interval is None):
-            out_path = Path(cfg.out_dir) / ("TOA5_" + path.stem + "_" + df.index.min().strftime(cfg.timedate_filenames) + path.suffix)
-        else:
-            out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
-        
+
+        out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
         if out_path.exists():
             out_path = out_path.with_stem(out_path.stem + f"_{i}")
-        
+        # the time splitting function does its own thing with filenames, so we exclude that case here
+        if cfg.timedate_filenames is not None and cfg.time_interval is None:
+            out_path = out_path.with_stem(out_path.stem + "_" + df["TIMESTAMP"].min().strftime(cfg.timedate_filenames))
         output_paths.append(out_path)
 
         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)

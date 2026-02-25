@@ -46,27 +46,28 @@ def write_toa5_file(
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)  # suppress warnings about NaNs being inserted when converting to integers
             for col in df.select_dtypes('float'):
-                if header.file_type != FileType.TOA5:
-                    csci_dtype = header.csci_dtypes[header.names.index(col)]
-                    if csci_dtype == "FP2":
-                        df[col] = df[col].round(4)
-                    elif csci_dtype in {"IEEE4", "IEEE4B"}:
-                        df[col] = df[col].round(8)
-                    elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
-                        df[col] = df[col].round(16)
-                        
-        # TODO: more consistent handling of nans
-        for col in df.select_dtypes('integer'):
-            if col not in header.names:
-                continue
-            csci_dtype = header.csci_dtypes[header.names.index(col)]
-            if csci_dtype == "UINT2":
-                df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)
+                if col not in header.names or header.file_type == FileType.TOA5:
+                    continue
+                csci_dtype = header.csci_dtypes[header.names.index(col)]
+                if csci_dtype == "FP2":
+                    df[col] = df[col].round(4)
+                elif csci_dtype in {"IEEE4", "IEEE4B"}:
+                    df[col] = df[col].round(8)
+                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
+                    df[col] = df[col].round(16)
 
-        if header.file_type != FileType.TOA5:
-            for name, csci_dtype in zip(header.names, header.csci_dtypes):
-                if csci_dtype in {"NSEC", "SECNANO"}:
-                    df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+            # TODO: more consistent handling of nans
+            for col in df.select_dtypes('integer'):
+                if col not in header.names or header.file_type == FileType.TOA5:
+                    continue
+                csci_dtype = header.csci_dtypes[header.names.index(col)]
+                if csci_dtype == "UINT2":
+                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)
+
+            if header.file_type != FileType.TOA5:
+                for name, csci_dtype in zip(header.names, header.csci_dtypes):
+                    if csci_dtype in {"NSEC", "SECNANO"}:
+                        df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime(r"%Y-%m-%d %H:%M:%S.%f")
 
         if header.file_type == FileType.TOB1:
             df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')

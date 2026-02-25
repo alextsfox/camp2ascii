@@ -1,10 +1,13 @@
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.
 * Overflow warnings from rounding are now suppressed
+* Fixed a bug where output files could overwrite each other if input files had the same name.
+* Fixed a bug where timedate_filenames did not work at all
+* Fixed a bug where write_toa5_file was throwing errors when the input file was also a TOA5 file
 
-# 1.0.1
+# 1.0.1 (Yanked due to a broken fix)
 * Fixed a bug where record intervals of hours, minutes, and seconds were raising an error.
-* Fixed a bug where output files could overwrite each other if the input files had the same name and the `timedate_filenames` option was not used.
+* Fixed a bug where output files could overwrite each other if the input files had the same name and the `timedate_filenames` option was not used. (Broken: see 1.0.2)
 
 # 1.0.0
 * Major changes

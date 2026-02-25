@@ -27,7 +27,7 @@ class TestCamp2Ascii(TestCase):
             return sum(ord(c) for c in str(val))
 
         try:
-            out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3)
+            out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3, timedate_filenames=1)
             out_files = sorted(out_files)
             cc_files = sorted((out_dir.parent / "cc").glob("*.dat"))
             for cc_file, c2a_file in zip(cc_files, out_files):
