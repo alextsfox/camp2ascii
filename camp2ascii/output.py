@@ -2,8 +2,10 @@
 
 import csv
 from pathlib import Path
+import warnings
 
 import pandas as pd
+
 
 from .formats import UINT2_NAN, FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
@@ -40,16 +42,19 @@ def write_toa5_file(
             df.drop(columns="TIMESTAMP", inplace=True)
         if not include_record:
             df.drop(columns="RECORD", inplace=True)
-
-        for col in df.select_dtypes('float'):
-            if header.file_type != FileType.TOA5:
-                csci_dtype = header.csci_dtypes[header.names.index(col)]
-                if csci_dtype == "FP2":
-                    df[col] = df[col].round(4)
-                elif csci_dtype in {"IEEE4", "IEEE4B"}:
-                    df[col] = df[col].round(8)
-                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
-                    df[col] = df[col].round(16)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)  # suppress warnings about NaNs being inserted when converting to integers
+            for col in df.select_dtypes('float'):
+                if header.file_type != FileType.TOA5:
+                    csci_dtype = header.csci_dtypes[header.names.index(col)]
+                    if csci_dtype == "FP2":
+                        df[col] = df[col].round(4)
+                    elif csci_dtype in {"IEEE4", "IEEE4B"}:
+                        df[col] = df[col].round(8)
+                    elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
+                        df[col] = df[col].round(16)
+                        
         # TODO: more consistent handling of nans
         for col in df.select_dtypes('integer'):
             if col not in header.names:

@@ -1,5 +1,6 @@
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.
+* Overflow warnings from rounding are now suppressed
 
 # 1.0.1
 * Fixed a bug where record intervals of hours, minutes, and seconds were raising an error.

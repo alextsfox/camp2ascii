@@ -201,7 +201,6 @@ def execute_config(cfg: Config) -> list[Path]:
             last_file_dict[k] = order_files_by_time(group)[0][-1]
     
     output_paths = []
-    nbytes_proc_total = 0  # for progress bar tracking
     for i, path in enumerate(cfg.input_files):
         df, header = process_file(path, cfg.stop_cond)
         if (cfg.timedate_filenames is not None and cfg.time_interval is None):
@@ -211,6 +210,7 @@ def execute_config(cfg: Config) -> list[Path]:
         
         if out_path.exists():
             out_path = out_path.with_stem(out_path.stem + f"_{i}")
+        
         output_paths.append(out_path)
 
         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
