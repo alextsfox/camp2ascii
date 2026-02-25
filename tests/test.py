@@ -28,38 +28,38 @@ class TestCamp2Ascii(TestCase):
 
         try:
             out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3)
-            for f in out_files:
+            out_files = sorted(out_files)
+            cc_files = sorted((out_dir.parent / "cc").glob("*.dat"))
+            for cc_file, c2a_file in zip(cc_files, out_files):
 
-                my_tob3 = pd.read_csv(f, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
-                my_tob3["TIMESTAMP"] = pd.to_datetime(my_tob3["TIMESTAMP"], format="ISO8601")
+                c2a_df = pd.read_csv(c2a_file, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
+                c2a_df["TIMESTAMP"] = pd.to_datetime(c2a_df["TIMESTAMP"], format="ISO8601")
+                cc_df = pd.read_csv(cc_file, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
+                cc_df["TIMESTAMP"] = pd.to_datetime(cc_df["TIMESTAMP"], format="ISO8601")
 
-                ref_file = list((out_dir.parent / "cc").glob(f"*{f.stem}*"))[0]
-                ref_tob3 = pd.read_csv(ref_file, skiprows=[0, 2, 3], na_values=["NAN", '"NAN"'])
-                ref_tob3["TIMESTAMP"] = pd.to_datetime(ref_tob3["TIMESTAMP"], format="ISO8601")
-
-                if "temp_TMx(1)" in ref_tob3.columns:
-                    ref_tob3["temp_TMx(1)"] = pd.to_datetime(ref_tob3["temp_TMx(1)"], format="ISO8601")
-                    my_tob3["temp_TMx(1)"] = pd.to_datetime(my_tob3["temp_TMx(1)"], format="ISO8601")
+                if "temp_TMx(1)" in cc_df.columns:
+                    cc_df["temp_TMx(1)"] = pd.to_datetime(cc_df["temp_TMx(1)"], format="ISO8601")
+                    c2a_df["temp_TMx(1)"] = pd.to_datetime(c2a_df["temp_TMx(1)"], format="ISO8601")
                 
-                for col in ref_tob3.columns:
+                for col in cc_df.columns:
                     if col in {"TIMESTAMP", "temp_TMx(1)"}:
-                        ref_tob3[col] = ref_tob3[col].astype(np.int64)
-                        my_tob3[col] = my_tob3[col].astype(np.int64)
+                        cc_df[col] = cc_df[col].astype(np.int64)
+                        c2a_df[col] = c2a_df[col].astype(np.int64)
                     elif (
-                        pd.api.types.is_string_dtype(ref_tob3[col])
-                        or pd.api.types.is_string_dtype(my_tob3[col])
+                        pd.api.types.is_string_dtype(cc_df[col])
+                        or pd.api.types.is_string_dtype(c2a_df[col])
                     ):
-                        ref_tob3[col] = ref_tob3[col].map(_string_to_hash)
-                        my_tob3[col] = my_tob3[col].map(_string_to_hash)
-                    ref_tob3[col] = ref_tob3[col].astype(np.float64)
-                    my_tob3[col] = my_tob3[col].astype(np.float64)
+                        cc_df[col] = cc_df[col].map(_string_to_hash)
+                        c2a_df[col] = c2a_df[col].map(_string_to_hash)
+                    cc_df[col] = cc_df[col].astype(np.float64)
+                    c2a_df[col] = c2a_df[col].astype(np.float64)
 
-                ref_tob3 = ref_tob3.set_index("RECORD")
-                my_tob3 = my_tob3.set_index("RECORD")
+                cc_df = cc_df.set_index("RECORD")
+                c2a_df = c2a_df.set_index("RECORD")
 
-                self.assertTrue(np.allclose(ref_tob3, my_tob3, equal_nan=True), f"TOB conversion did not match reference data for file {f.name}")
+                self.assertTrue(np.allclose(cc_df, c2a_df, equal_nan=True), f"TOB conversion did not match reference data for file {c2a_file.name}")
         finally:
-            for f in out_files:
-                f.unlink(missing_ok=True)
-            for f in out_dir.glob("*.log"):
-                f.unlink(missing_ok=True)
+            for c2a_file in out_files:
+                c2a_file.unlink(missing_ok=True)
+            for c2a_file in out_dir.glob("*.log"):
+                c2a_file.unlink(missing_ok=True)

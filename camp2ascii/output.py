@@ -52,9 +52,11 @@ def write_toa5_file(
                     df[col] = df[col].round(16)
         # TODO: more consistent handling of nans
         for col in df.select_dtypes('integer'):
+            if col not in header.names:
+                continue
             csci_dtype = header.csci_dtypes[header.names.index(col)]
             if csci_dtype == "UINT2":
-                df[col] = df[col].where(df[col] < UINT2_NAN, -9999).astype("int16")
+                df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)
 
         if header.file_type != FileType.TOA5:
             for name, csci_dtype in zip(header.names, header.csci_dtypes):
