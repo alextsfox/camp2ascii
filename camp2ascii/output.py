@@ -43,6 +43,8 @@ def write_toa5_file(
         if not include_record:
             df.drop(columns="RECORD", inplace=True)
         
+        # values > ~10^30 or so throw a runtimewarning when rounding
+        # these values are already garbage, so we ignore the warning.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)  # suppress warnings about NaNs being inserted when converting to integers
             for col in df.select_dtypes('float'):
