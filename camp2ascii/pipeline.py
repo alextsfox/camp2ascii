@@ -142,14 +142,14 @@ def minor_frames_to_pandas(
     df["RECORD"] = records
     return df
 
-def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
+def process_file(path: Path | str, n_invalid: int | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
     path = Path(path)
 
     with open(path, "rb") as input_buff:
         header, ascii_header_nbytes = parse_file_header(input_buff, path)
 
         if header.file_type in (FileType.TOB3, FileType.TOB2):
-            headers_raw, data_raw, footers_raw, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)
+            headers_raw, data_raw, footers_raw, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid)
             data_structured = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)
             
 
@@ -166,7 +166,7 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
             df = pd.concat([df, minor_df], ignore_index=True)
 
         elif header.file_type == FileType.TOB1:
-            data_raw = ingest_tob1_data(input_buff, header, ascii_header_nbytes, pbar)
+            data_raw = ingest_tob1_data(input_buff, header, ascii_header_nbytes)
             data_structured = np.frombuffer(data_raw, dtype=header.intermediate_dtype)
             # Each line of data in a TOB1 file has everything we need, but the timestamps are stored in a special way
             df = data_to_pandas(data_structured, header)
@@ -175,16 +175,12 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
                 df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
     
 
-        nb_proc = input_buff.tell()
-    
-
     
     if header.file_type == FileType.TOA5:
         df = toa5_to_pandas(path)
         df.reset_index(inplace=True)
         if "index" in df.columns:
             df.rename(columns={"index": "RECORD"}, inplace=True)
-        nb_proc = 0
 
     if "RECORD" in df:
         df.sort_values("RECORD", inplace=True)
@@ -193,9 +189,6 @@ def process_file(path: Path | str, n_invalid: int | None = None, pbar: tqdm | No
         df.sort_values("TIMESTAMP", inplace=True)
     if "TIMESTAMP" in df:
         df = df[["TIMESTAMP"] + [col for col in df.columns if col != "TIMESTAMP"]]
-    
-    if pbar is not None:
-        pbar.update(path.stat().st_size - nb_proc)
     
     return df, header
 
@@ -210,7 +203,7 @@ def execute_config(cfg: Config) -> list[Path]:
     output_paths = []
     nbytes_proc_total = 0  # for progress bar tracking
     for i, path in enumerate(cfg.input_files):
-        df, header = process_file(path, cfg.stop_cond, pbar=cfg.pbar)
+        df, header = process_file(path, cfg.stop_cond)
         if (cfg.timedate_filenames is not None and cfg.time_interval is None):
             out_path = Path(cfg.out_dir) / ("TOA5_" + path.stem + "_" + df.index.min().strftime(cfg.timedate_filenames) + path.suffix)
         else:
@@ -222,12 +215,9 @@ def execute_config(cfg: Config) -> list[Path]:
 
         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
         if cfg.pbar is not None:
-            nbytes_proc_total += out_path.stat().st_size
-            cfg.pbar.n = nbytes_proc_total
-            cfg.pbar.refresh()
-    if cfg.pbar is not None:
-        cfg.pbar.n = cfg.pbar.total
-        cfg.pbar.refresh()
+            cfg.pbar.update(path.stat().st_size)
+            from time import sleep
+            sleep(0.25)
 
     matching_file_dict = build_matching_file_dict(output_paths)
     if cfg.append_to_last_file:

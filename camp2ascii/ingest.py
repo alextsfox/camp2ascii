@@ -85,17 +85,15 @@ def parse_major_frame(input_buff: BufferedReader, frame_nbytes, file_type) -> tu
 
     return header_bytes, data_bytes
 
-def ingest_tob1_data(input_buff: BufferedReader, header: TOB1Header, ascii_header_nbytes: int, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob1_data(input_buff: BufferedReader, header: TOB1Header, ascii_header_nbytes: int) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """TOB1 files do not have frame headers or footers, so we return empty lists for those and read the entire data section as a single block."""
     input_buff.seek(ascii_header_nbytes)
     data_bytes = input_buff.read()
     nlines = len(data_bytes) // header.line_nbytes
     data_bytes = data_bytes[:nlines*header.line_nbytes]  # truncate to a whole number of lines in case of corrupted trailing data
-    if pbar is not None:
-        pbar.update(ascii_header_nbytes + len(data_bytes))
     return data_bytes
 
-def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray, list[list[bytes]], list[list[bytes]], list[list[Footer]]]:
+def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header, ascii_header_nbytes: int, n_invalid: int | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray, list[list[bytes]], list[list[bytes]], list[list[Footer]]]:
     """ingest the raw data from a tob3 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames.
     
     Parameters
@@ -193,11 +191,9 @@ def ingest_tob3_data(input_buff: BufferedReader, header: TOB3Header | TOB2Header
             major_frame += 1
             log(f"Processed major frame at byte {input_buff.tell() - header.frame_nbytes} in {header.path.relative_to(header.path.parent.parent.parent)}.")
         skipped_frames = 0  # reset count of consecutively skipped frames after a successful frame
-        if pbar is not None:
-            pbar.update(header.frame_nbytes)
 
     return headers_raw[:final_frame], data_raw[:final_frame], footers_raw[:final_frame], minor_headers_raw, minor_data_raw, minor_footers_raw
 
-def ingest_tob2_data(input_buff: BufferedReader, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None, pbar: tqdm | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
+def ingest_tob2_data(input_buff: BufferedReader, header: TOB2Header, ascii_header_nbytes: int, n_invalid: int | None) -> tuple[list[bytes], list[bytes], list[Footer], np.ndarray]:
     """ingest the raw data from a tob2 file, returning lists of the raw header, data, and footer bytes for each frame, as well as a mask indicating which lines are missing due to minor frames."""
-    return ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid, pbar)  # TOB2 and TOB3 have the same frame structure, just different header content
+    return ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid)  # TOB2 and TOB3 have the same frame structure, just different header content
