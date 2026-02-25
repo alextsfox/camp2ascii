@@ -216,8 +216,6 @@ def execute_config(cfg: Config) -> list[Path]:
         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
         if cfg.pbar is not None:
             cfg.pbar.update(path.stat().st_size)
-            from time import sleep
-            sleep(0.25)
 
     matching_file_dict = build_matching_file_dict(output_paths)
     if cfg.append_to_last_file:

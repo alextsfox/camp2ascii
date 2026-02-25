@@ -162,7 +162,7 @@ def _main(
                 total=total_bytes_to_read, 
                 unit="B", unit_scale=True, unit_divisor=1024, 
                 desc="Processing files", 
-                mininterval=0.2
+                mininterval=0.25
             )
         except ImportError:
             warn("tqdm not installed; progress bar disabled.")
