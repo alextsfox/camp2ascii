@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "camp2a
-version = "1.0.1"
+name = "camp2ascii"
+version = "1.0.2"
 description = "Convert Campbell Scientific TOB1/TOB2/TOB3 files to ASCII (TOA5)."
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -38,5 +38,5 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["camp2ascii*"]2ascii"]
+include = ["camp2ascii*"]
 include-package-data = true
