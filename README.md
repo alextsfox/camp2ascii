@@ -1,6 +1,6 @@
 Python program to convert Campbell Scientific TOB files to ASCII (TOA5) files. 
 
-This tool is based off of the identically-named camp2ascii written by Mathias Bavay: https://git.wsl.ch/bavay/camp2ascii
+This tool is inspired by the identically-named camp2ascii written by Mathias Bavay: https://git.wsl.ch/bavay/camp2ascii
 
 # Installation
 

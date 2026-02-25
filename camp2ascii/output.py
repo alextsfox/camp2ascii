@@ -24,7 +24,7 @@ def write_toa5_file(
         ascii_header = format_toa5_header(header, False, include_record)
     elif "RECORD" in header.names:
         ascii_header = format_toa5_header(header, include_timestamp, True)
-    else:
+    else:  # most common outcome
         ascii_header = format_toa5_header(header, include_timestamp, include_record)
 
     with open(output_path, "w") as output_buffer:
@@ -32,9 +32,9 @@ def write_toa5_file(
             output_buffer.write(ascii_header)
         if df.index.name == "TIMESTAMP":
             df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
-            df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
-            split_ts = df["TIMESTAMP"].str.split(".")
-            df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
+        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+        split_ts = df["TIMESTAMP"].str.split(".")
+        df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
         
         if not include_timestamp:
             df.drop(columns="TIMESTAMP", inplace=True)
@@ -50,8 +50,13 @@ def write_toa5_file(
                     df[col] = df[col].round(8)
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
                     df[col] = df[col].round(16)
-                elif csci_dtype == "UINT2":
-                    df[col] = df[col].where(df[col] < UINT2_NAN).astype("uint16")
+        # TODO: more consistent handling of nans
+        for col in df.select_dtypes('integer'):
+            if col not in header.names:
+                continue
+            csci_dtype = header.csci_dtypes[header.names.index(col)]
+            if csci_dtype == "UINT2":
+                df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)
 
         if header.file_type != FileType.TOA5:
             for name, csci_dtype in zip(header.names, header.csci_dtypes):
