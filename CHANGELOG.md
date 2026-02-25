@@ -4,6 +4,7 @@
 * Fixed a bug where output files could overwrite each other if input files had the same name.
 * Fixed a bug where timedate_filenames did not work at all
 * Fixed a bug where write_toa5_file was throwing errors when the input file was also a TOA5 file
+* Fixed a bug where inf values in integer columns were not being replace with na_fill_value in toa5_to_pandas, causing an IntegerCastingError
 
 # 1.0.1 (Yanked due to a broken fix)
 * Fixed a bug where record intervals of hours, minutes, and seconds were raising an error.
