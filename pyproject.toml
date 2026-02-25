@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camp2ascii"
-version = "1.0.1"
+version = "1.0.2"
 description = "Convert Campbell Scientific TOB1/TOB2/TOB3 files to ASCII (TOA5)."
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["campbell", "tob", "toa5", "logger", "cardconvert", "csci", "tob1", "tob2", "tob3", "card convert", "tob32", "CSIDFT_convert", "loggernet"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 2 - Beta",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
   "Operating System :: OS Independent",

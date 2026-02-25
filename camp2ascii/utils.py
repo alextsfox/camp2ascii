@@ -82,7 +82,7 @@ def toa5_to_pandas(
     )
     for name, typ in dtypes.items():
         if typ == "int":
-            df[name] = df[name].replace(np.nan, int_na_fill_value).astype(int)
+            df[name] = df[name].replace([np.nan, np.inf, -np.inf], int_na_fill_value).astype(int)
 
                 
     if try_to_parse_dates:
@@ -97,7 +97,7 @@ def toa5_to_pandas(
             # the column may not be a timestamp, but it might still be parseable as one.
             for i in range(df.shape[0]):
                 val = df.at[i, col]
-                if val == np.nan:
+                if pd.isna(val):
                     continue
                 if re.match(r"[12]\d{3}-\d{2}-\d{2}", val) is not None:
                     df[col] = pd.to_datetime(df[col], format="ISO8601")
