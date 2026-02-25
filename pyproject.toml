@@ -39,4 +39,3 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["camp2ascii*"]
-include-package-data = true
