@@ -213,9 +213,6 @@ def _main(
             timedate_filenames = None
         case _:
             raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
-    # TODO: add tests for timedate_filenames
-    if timedate_filenames:
-        warn("timedate_filenames currently an experimental feature. Use with caution and verify that output files are named as expected.")
 
     # TODO: add tests for time_interval
     if time_interval:
