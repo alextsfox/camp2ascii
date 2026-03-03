@@ -61,7 +61,7 @@ def camp2ascii(
         output_format: int = 0,
         pbar: bool = False, 
         verbose: int = 1,
-) -> list[Path]:
+) -> Iterator[Path] | Iterator[pd.DataFrame]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
 
     Binary files will be read from `input_files`, converted to ASCII (TOA5 format), and written to `output_dir`.
