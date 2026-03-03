@@ -1,22 +1,24 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import pandas as pd
 
-from .formats import FileType, Footer, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH
+from .formats import FileType, Footer, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH, OutputFormat
 from .decode import (
     FRAME_HEADER_DTYPE, FINAL_TYPES,
     decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp, decode_bool, decode_bool8
 )
 from .headers import parse_file_header
 from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
-from .output import write_toa5_file
+from .output import write_toa5_file, write_csv_file, write_feather_file, write_parquet_file
 from .restructure import build_matching_file_dict, split_files_by_time_interval, order_files_by_time
-from .warninghandler import get_global_warn
+from .warninghandler import get_global_warn, set_global_warn
+from .logginghandler import get_global_log, set_global_log
 from .utils import toa5_to_pandas
 
 if TYPE_CHECKING:
@@ -193,60 +195,132 @@ def process_file(path: Path | str, n_invalid: int | None = None) -> tuple[pd.Dat
     
     return df, header
 
-def execute_config(cfg: Config) -> list[Path]:
 
-    # find the most recent files in the output directory, grouped by header hash
-    if cfg.append_to_last_file:
-        last_file_dict = build_matching_file_dict(cfg.out_dir.glob("TOA5_*.dat"))
-        for k, group in last_file_dict.items():
-            last_file_dict[k] = order_files_by_time(group)[0][-1]
+def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
+
+    log_file_buffer = None
+    if cfg.log_file is not None:
+        log_file_buffer = open(cfg.log_file, "a")
+    set_global_warn(mode=cfg.mode, verbose=cfg.verbose, logfile_buffer=log_file_buffer)
+    set_global_log(mode=cfg.mode, verbose=cfg.verbose, logfile_buffer=log_file_buffer)
+
+    try:
+        process_file_gen = ((*process_file(path, cfg.stop_cond), path) for path in cfg.input_files)
+        matching_file_dict = {}
+        while (x := next(process_file_gen, None)) is not None:
+            df, header, path = x
+
+            # matching_file_dict.setdefault(hash(header), []).append(path)
+
+            # here, we can do the splicing to make contiguous or time-interval dataframes before we write them out
+
+            if cfg.output_format != OutputFormat.PANDAS:
+                # we have a prefix, which is either TOA5_
+                # we have the original file stem
+                # we have a number we can append to the stem to avoid filename collisions
+                # we have a timedate that is either _YYYYMMDD etc or nothing
+                # we have a suffix that is either .dat, .csv, .feather, or .parquet depending on the output format
+                # in the end, we have: <prefix><stem><num><timedate><suffix>
+                prefix = ""
+                original_stem = Path(path).stem
+                num = 0
+                timedate = ""
+                suffix = ""
+                match cfg.output_format:
+                    case OutputFormat.TOA5:
+                        suffix = ".dat"
+                    case OutputFormat.CSV:
+                        suffix = ".csv"
+                    case OutputFormat.FEATHER:
+                        suffix = ".feather"
+                    case OutputFormat.PARQUET:
+                        suffix = ".parquet"
+                    case _:
+                        raise ValueError(f"Unsupported output format: {cfg.output_format}")
+                
+                if cfg.timedate_filenames is not None:
+                    timedate = "_" + df["TIMESTAMP"].min().strftime(cfg.timedate_filenames)
+
+                while (out_path := Path(cfg.out_dir) / (prefix + original_stem + "_" + str(num) + timedate + suffix)).exists():
+                    num += 1
+                
+                match cfg.output_format:
+                    case OutputFormat.TOA5:
+                        write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+                    case OutputFormat.CSV:
+                        write_csv_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+                    case OutputFormat.FEATHER:
+                        write_feather_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+                    case OutputFormat.PARQUET:
+                        write_parquet_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+                    case _:
+                        raise ValueError(f"Unsupported output format: {cfg.output_format}")
+                    
+                yield out_path
+
+            # output format is pandas
+            else:
+                yield df
+    finally:
+        if log_file_buffer is not None:
+            log_file_buffer.close()
+
+
+
+# def execute_config(cfg: Config) -> list[Path]:
+
+#     # find the most recent files in the output directory, grouped by header hash
+#     if cfg.append_to_last_file:
+#         last_file_dict = build_matching_file_dict(cfg.out_dir.glob("TOA5_*.dat"))
+#         for k, group in last_file_dict.items():
+#             last_file_dict[k] = order_files_by_time(group)[0][-1]
     
-    output_paths = []
-    for i, path in enumerate(cfg.input_files):
-        df, header = process_file(path, cfg.stop_cond)
+#     output_paths = []
+#     for i, path in enumerate(cfg.input_files):
+#         df, header = process_file(path, cfg.stop_cond)
 
-        out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
-        if out_path.exists():
-            out_path = out_path.with_stem(out_path.stem + f"_{i}")
-        # the time splitting function does its own thing with filenames, so we exclude that case here
-        if cfg.timedate_filenames is not None and cfg.time_interval is None:
-            out_path = out_path.with_stem(out_path.stem + "_" + df["TIMESTAMP"].min().strftime(cfg.timedate_filenames))
-        output_paths.append(out_path)
+#         out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
+#         if out_path.exists():
+#             out_path = out_path.with_stem(out_path.stem + f"_{i}")
+#         # the time splitting function does its own thing with filenames, so we exclude that case here
+#         if cfg.timedate_filenames is not None and cfg.time_interval is None:
+#             out_path = out_path.with_stem(out_path.stem + "_" + df["TIMESTAMP"].min().strftime(cfg.timedate_filenames))
+#         output_paths.append(out_path)
 
-        out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
-        if cfg.pbar is not None:
-            cfg.pbar.update(path.stat().st_size)
+#         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
+#         if cfg.pbar is not None:
+#             cfg.pbar.update(path.stat().st_size)
 
-    matching_file_dict = build_matching_file_dict(output_paths)
-    if cfg.append_to_last_file:
-        # update the last_file_dict with any new files whose header hashes are not already in last_file_dict
-        for k, group in matching_file_dict.items():
-            first_new_file = order_files_by_time(group)[0][0]
-            last_file_dict.setdefault(k, first_new_file)
-        for k, last_path in last_file_dict.items():
-            with open(last_path, "a") as last_file_buff:
-                for new_path in matching_file_dict.get(k, []):
-                    # don't want to append a file to itself!
-                    if new_path == last_path:
-                        continue
-                    with open(new_path, "r") as new_file_buff:
-                        # skip 4 header lines
-                        for _ in range(4):
-                            next(new_file_buff, None) 
-                        last_file_buff.write(new_file_buff.read())
-        output_paths_2 = list(last_file_dict.values())
-        for path in output_paths:
-            if path not in output_paths_2:
-                path.unlink()
-        output_paths = output_paths_2
+#     matching_file_dict = build_matching_file_dict(output_paths)
+#     if cfg.append_to_last_file:
+#         # update the last_file_dict with any new files whose header hashes are not already in last_file_dict
+#         for k, group in matching_file_dict.items():
+#             first_new_file = order_files_by_time(group)[0][0]
+#             last_file_dict.setdefault(k, first_new_file)
+#         for k, last_path in last_file_dict.items():
+#             with open(last_path, "a") as last_file_buff:
+#                 for new_path in matching_file_dict.get(k, []):
+#                     # don't want to append a file to itself!
+#                     if new_path == last_path:
+#                         continue
+#                     with open(new_path, "r") as new_file_buff:
+#                         # skip 4 header lines
+#                         for _ in range(4):
+#                             next(new_file_buff, None) 
+#                         last_file_buff.write(new_file_buff.read())
+#         output_paths_2 = list(last_file_dict.values())
+#         for path in output_paths:
+#             if path not in output_paths_2:
+#                 path.unlink()
+#         output_paths = output_paths_2
 
-    if cfg.time_interval is not None:
-        output_paths_2 = []
-        for matching_files in matching_file_dict.values():
-            output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
-        for path in output_paths:
-            if path not in output_paths_2:
-                path.unlink()
-        output_paths = output_paths_2
+#     if cfg.time_interval is not None:
+#         output_paths_2 = []
+#         for matching_files in matching_file_dict.values():
+#             output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
+#         for path in output_paths:
+#             if path not in output_paths_2:
+#                 path.unlink()
+#         output_paths = output_paths_2
 
-    return output_paths
+#     return output_paths

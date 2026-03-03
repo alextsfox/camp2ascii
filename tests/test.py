@@ -30,7 +30,7 @@ class TestCamp2Ascii(TestCase):
             c2a_file.unlink(missing_ok=True)
 
         try:
-            out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3, timedate_filenames=1)
+            out_files = list(camp2ascii(in_dir, out_dir, pbar=True, verbose=3, timedate_filenames=1))
             out_files = sorted(out_files)
             cc_files = sorted((out_dir.parent / "cc").glob("*.dat"))
             for cc_file, c2a_file in zip(cc_files, out_files):

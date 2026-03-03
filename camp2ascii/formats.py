@@ -29,6 +29,13 @@ FP2_NAN = 7999
 FP4_NAN = 99999
 UINT2_NAN = 65535
 
+class OutputFormat(Enum):
+    TOA5 = 0
+    CSV = 1
+    FEATHER = 2
+    PARQUET = 3
+    PANDAS = 4
+
 @dataclass(frozen=True, slots=True)
 class Config:
     input_files: list[Path]
@@ -41,7 +48,10 @@ class Config:
     time_interval: datetime.timedelta | None
     contiguous_timeseries: int
     append_to_last_file: bool
-    output_format: int
+    output_format: OutputFormat
+    verbose: int
+    mode: str
+    log_file: Path | None
 
 class FileType(Enum):
     TOB1 = auto()

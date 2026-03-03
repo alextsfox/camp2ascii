@@ -15,12 +15,13 @@ from glob import glob
 from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
+from collections.abc import Iterator
 
 import pandas as pd
 
 
 from .pipeline import execute_config
-from .formats import Config
+from .formats import Config, OutputFormat
 from .warninghandler import get_global_warn, set_global_warn
 from .logginghandler import get_global_log, set_global_log
 
@@ -46,6 +47,7 @@ def camp2ascii(
         contiguous_timeseries: int = 0,
         store_timestamps: bool = True,
         store_record_number: bool = True,
+        output_format: int = 0,
         pbar: bool = False, 
         verbose: int = 1,
 ) -> list[Path]:
@@ -80,6 +82,16 @@ def camp2ascii(
         Whether to include the TIMESTAMP field in the output files. Default is True.
     store_record_number: bool, optional
         Whether to include the RECORD field in the output files. Default is True.
+    output_format: int, optional
+        0 (Default): Output in strict TOA5 format (slower, but compatible with Campbell Workflows).
+        1: Output in CSV format with no special formattting
+        2: Output in Feather format
+        3: Output in Parquet format
+        4: Output as Pandas DataFrames (not written to disk)
+
+        Options 0-3 return an iterator of Paths to the output files.
+        Option 4 returns an iterator of Pandas DataFrames.
+
     pbar : bool, optional
         Print a progress bar to stdout (requires tqdm). Default is False.
     verbose: int, optional
@@ -100,6 +112,7 @@ def camp2ascii(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_file_buffer = None
+    log_file = None
     if verbose == 3:
         log_file_number = len(list(out_dir.glob('.camp2ascii_*.log')))+1
         log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
@@ -119,6 +132,10 @@ def camp2ascii(
             timedate_filenames=timedate_filenames,
             contiguous_timeseries=contiguous_timeseries,
             append_to_last_file=False,
+            output_format = output_format,
+            verbose=verbose,
+            mode="api",
+            log_file=log_file,
         )
     finally:
         if log_file_buffer is not None:
@@ -136,7 +153,11 @@ def _main(
     timedate_filenames: int | None = None,
     contiguous_timeseries: int = 0,
     append_to_last_file: bool = False,
-):
+    output_format: int = 0,
+    verbose: int=1,
+    mode: str = "api",
+    log_file: Path | None = None,
+) -> Iterator[Path] | Iterator[pd.DataFrame]:
     """For the primary API function, see camp2ascii()."""
     warn = get_global_warn()
 
@@ -220,6 +241,10 @@ def _main(
         warn("append_to_last_file is not implemented currently. This option will be ignored.")
         append_to_last_file = False
     
+    if output_format not in (0, 1, 2, 3, 4):
+        raise ValueError("Invalid value for output_format. Must be 0 (TOA5), 1 (CSV), 2 (Feather), 3 (Parquet), or 4 (Pandas DataFrame).")
+    output_format = OutputFormat(output_format)
+
     cfg = Config(
         input_files=input_files,
         out_dir=out_dir,
@@ -231,6 +256,10 @@ def _main(
         timedate_filenames=timedate_filenames,
         contiguous_timeseries=contiguous_timeseries,
         append_to_last_file=append_to_last_file,
+        output_format=output_format,
+        verbose=verbose,
+        mode=mode,
+        log_file=log_file,
     )
 
     # TODO: append to last file is unsafe, because it could result in data scrambling if we run this twice in the same output directory
@@ -238,9 +267,9 @@ def _main(
     # consider also just not using this argument
     # ach but this won't work for TOA5 files because they don't have file start timestamps
     # and now that I think about it, neither do TOB1 files either.
-    final_output_paths = execute_config(cfg)
+    output = execute_config(cfg)
 
-    return final_output_paths
+    return output
     
 
 
