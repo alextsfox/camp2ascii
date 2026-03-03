@@ -20,7 +20,7 @@ pip install camp2ascii
 
 The following command calls the CLI:
 ```bash
-camp2ascii -i ./64293_20Hz*.dat -odir ./ascii_files -pbar
+camp2ascii ./64293_20Hz*.dat -odir ./ascii_files -pbar
 ```
 
 This will attempt to convert all files matching the glob string `./64293_Metdata*.dat` from TOB (binary) format to TOA5 (ASCII) format, outputting the resulting files to the `./ascii_files` directory. A progress bar will be displayed.
@@ -51,4 +51,4 @@ data.plot(y="sonic_temp", style='o')
 plt.show()
 ```
 
-The above code snipped uses `toa5_to_pandas`, but you can also do `pd.read_csv(path, skiprows=[0, 2, 3], na_values=["NAN"], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP")`. However, since integers in python cannot be NAN (but can in TOA5 files) and due to how NANs are stored in TOA5 files (as `"NAN"`, in quotes), pandas has trouble correctly identifying certain datatypes. `toa5_to_pandas` will generally work better for this purpose.
+The above code snippet uses `toa5_to_pandas`, but you can also do `pd.read_csv(path, skiprows=[0, 2, 3], na_values=["NAN"], parse_dates=["TIMESTAMP"], index_col="TIMESTAMP")`. However, since integers in python cannot be NAN (but can in TOA5 files) and due to how NANs are stored in TOA5 files (as `"NAN"`, in quotes), pandas has trouble correctly identifying certain datatypes. `toa5_to_pandas` will generally work better for this purpose.

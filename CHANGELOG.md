@@ -1,3 +1,10 @@
+# 1.0.3
+* Thank you to Stephen Chan for reporting some more bugs!
+* Updated the usage statement in the README
+* Enabled options to hide the TIMESTAMP and RECORD fields in the output files
+* Float columns are now formatted to %.4g sig figs (FP2), %.8g sig figs (IEEE4), and %.16g (IEEE8) to reduce file size
+* Single quotes (`'`) are now considered quotes when writing TOA5 files. This is a bit of kludge that allows us to write NANs as `"NAN"` and to put quotes around string fields but not the formatted float fields when using `pd.DataFrame.to_csv`. However, this does mean that if your data contains single quotes within a string (like in `O'Brien`), those quotes will be escaped with a backslash (`O\'Brien`) and will be included in the output file. When reading TOA5 files, consider either using `toa5_to_pandas`, or adding a line to replace `r"\'"` with `r"'"` in any string columns after reading the file in. Double quotes (`"`) will also parse funny. Unfortunately, this is a limitation of the `csv` module in the python standard library, and is a consequence of how TOA5 files handle quotes (which is to say, in as confusing a manner as possible). 
+
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.
 * Overflow warnings from rounding values > ~10^30 are now suppressed

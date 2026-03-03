@@ -78,11 +78,14 @@ def toa5_to_pandas(
         skiprows=[0, 2, 3], 
         na_values=na_values, 
         # int can't be nan, so we temporarily parse them as floats before recasting them to ints
-        dtype={name: typ.replace("int", "float") for name, typ in dtypes.items()}
+        dtype={name: typ.replace("int", "float") for name, typ in dtypes.items()},
+        quotechar='"',
     )
     for name, typ in dtypes.items():
         if typ == "int":
             df[name] = df[name].replace([np.nan, np.inf, -np.inf], int_na_fill_value).astype(int)
+        if pd.api.types.is_string_dtype(df[name]):
+            df[name] = df[name].str.replace(r"\'", "'")
 
                 
     if try_to_parse_dates:
@@ -99,14 +102,14 @@ def toa5_to_pandas(
                 val = df.at[i, col]
                 if pd.isna(val):
                     continue
-                if re.match(r"[12]\d{3}-\d{2}-\d{2}", val) is not None:
+                if re.match(r'[12]\d{3}-\d{2}-\d{2}', val) is not None:
                     df[col] = pd.to_datetime(df[col], format="ISO8601")
                 # quit as soon as we fail to parse a non-na value
                 break
 
-    if index_col not in df.columns:
-        raise ValueError(f"Index column {index_col} not found in {path.relative_to(path.parent.parent.parent)} columns.")
     if index_col is not None:
+        if index_col not in df.columns:
+            raise ValueError(f"Index column {index_col} not found in {path.relative_to(path.parent.parent.parent)} columns.")
         df.set_index(index_col, inplace=True)
         if sort_index:
             df.sort_index(inplace=True)

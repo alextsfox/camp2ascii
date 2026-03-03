@@ -16,7 +16,7 @@ __pycache__
 tests/c2a/*.dat
 tests/c2a/*.log
 *.py
-*.ipynb
+**.ipynb
 
 publish.txt
 .venv
