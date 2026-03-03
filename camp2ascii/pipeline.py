@@ -206,11 +206,9 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
 
     try:
         process_file_gen = ((*process_file(path, cfg.stop_cond), path) for path in cfg.input_files)
-        matching_file_dict = {}
+        # matching_file_dict: dict[int, list[pd.DataFrame]] = {}
         while (x := next(process_file_gen, None)) is not None:
             df, header, path = x
-
-            # matching_file_dict.setdefault(hash(header), []).append(path)
 
             # here, we can do the splicing to make contiguous or time-interval dataframes before we write them out
 

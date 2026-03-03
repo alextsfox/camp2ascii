@@ -6,6 +6,7 @@ from typing import Optional
 from pathlib import Path
 import sys
 
+from .formats import OutputFormat
 from .camp2ascii import _main as c2a_main
 from .warninghandler import set_global_warn
 from .logginghandler import set_global_log
@@ -50,6 +51,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "2: aggressive. If used with time_interval, also generate files containing all NANs if necessary to fill gaps between existing files.")
     parser.add_argument("-hide-timestamps", dest="store_timestamp", action="store_false", help="Do not include the TIMESTAMP field in the output files.")
     parser.add_argument("-hide-record", dest="store_record_number", action="store_false", help="Do not include the RECORD field in the output files.")
+    parser.add_argument("-output-format", dest="output_format", choices=["toa5", "csv", "feather", "parquet"], default="toa5", help="Output file format. Default is TOA5.")
     return parser.parse_args(argv)
 
 
@@ -60,12 +62,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_file_buffer = None
+    log_file = None
     if args.verbose == 3:
         log_file_number = len(list(out_dir.glob('.camp2ascii_*.log'))) + 1
         log_file = out_dir / f".camp2ascii_{log_file_number}.log"
         log_file_buffer = open(log_file, "w")
     set_global_warn(mode="cli", verbose=args.verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode="cli", verbose=args.verbose, logfile_buffer=log_file_buffer)
+
+    match args.output_format:
+        case "toa5":
+            output_format = OutputFormat.TOA5.value
+        case "csv":
+            output_format = OutputFormat.CSV.value
+        case "feather":
+            output_format = OutputFormat.FEATHER.value
+        case "parquet":
+            output_format = OutputFormat.PARQUET.value
+        case "pandas":
+            raise ValueError("PANDAS output format is not supported in the CLI.")
+        case _:
+            raise ValueError(f"Invalid output format: {args.output_format}")
 
     try:
         n_invalid = args.n_invalid if args.n_invalid > 0 else None
@@ -80,6 +97,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             timedate_filenames=args.timedate_filenames,
             contiguous_timeseries=args.contiguous_timeseries,
             append_to_last_file=False,
+            mode="cli",
+            log_file=log_file,
+            output_format=output_format,
         )
 
         sys.stdout.write("\n".join(str(p) for p in out_files) + "\n")
