@@ -179,16 +179,17 @@ def process_file(path: Path | str, n_invalid: int | None = None) -> tuple[pd.Dat
     if header.file_type == FileType.TOA5:
         df = toa5_to_pandas(path)
         df.reset_index(inplace=True)
-        if "index" in df.columns:
-            df.rename(columns={"index": "RECORD"}, inplace=True)
+        df.rename(columns={"index": "TIMESTAMP"}, inplace=True)
 
-    if "RECORD" in df:
-        df.sort_values("RECORD", inplace=True)
+    if "TIMESTAMP" and "RECORD" in df.columns:
+        df = df[["TIMESTAMP", "RECORD"] + [col for col in df.columns if col not in ["TIMESTAMP", "RECORD"]]]
+        df = df.sort_values(["RECORD", "TIMESTAMP"], ignore_index=True)
+    elif "RECORD" in df.columns:
         df = df[["RECORD"] + [col for col in df.columns if col != "RECORD"]]
-    elif "TIMESTAMP" in df:
-        df.sort_values("TIMESTAMP", inplace=True)
-    if "TIMESTAMP" in df:
+        df = df.sort_values("RECORD", ignore_index=True)
+    elif "TIMESTAMP" in df.columns:
         df = df[["TIMESTAMP"] + [col for col in df.columns if col != "TIMESTAMP"]]
+        df = df.sort_values("TIMESTAMP", ignore_index=True)
     
     return df, header
 

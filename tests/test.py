@@ -26,6 +26,9 @@ class TestCamp2Ascii(TestCase):
                 return np.nan
             return sum(ord(c) for c in str(val))
 
+        for c2a_file in out_dir.iterdir():
+            c2a_file.unlink(missing_ok=True)
+
         try:
             out_files = camp2ascii(in_dir, out_dir, pbar=True, verbose=3, timedate_filenames=1)
             out_files = sorted(out_files)
@@ -62,4 +65,5 @@ class TestCamp2Ascii(TestCase):
                 self.assertTrue(np.allclose(cc_df, c2a_df, equal_nan=True), f"TOB conversion did not match reference data for file {c2a_file.name}")
         finally:
             for c2a_file in out_dir.iterdir():
-                c2a_file.unlink(missing_ok=True)
+                pass
+                # c2a_file.unlink(missing_ok=True)

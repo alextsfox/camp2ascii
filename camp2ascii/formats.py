@@ -41,6 +41,7 @@ class Config:
     time_interval: datetime.timedelta | None
     contiguous_timeseries: int
     append_to_last_file: bool
+    output_format: int
 
 class FileType(Enum):
     TOB1 = auto()
