@@ -219,11 +219,6 @@ def _main(
     if append_to_last_file:
         warn("append_to_last_file is not implemented currently. This option will be ignored.")
         append_to_last_file = False
-
-    if not store_timestamp:
-        warn("Hiding the TIMESTAMP column in output files is an experimental feature. Use with caution and verify that output files are formatted as expected.")
-    if not store_record_numbers:
-        warn("Hiding the RECORD column in output files is an experimental feature. Use with caution and verify that output files are formatted as expected.")
     
     cfg = Config(
         input_files=input_files,

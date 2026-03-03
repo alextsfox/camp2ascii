@@ -7,9 +7,11 @@ import warnings
 import pandas as pd
 
 
+
 from .formats import UINT2_NAN, FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
 from .logginghandler import get_global_log
+from .warninghandler import get_global_warn
 
 def write_toa5_file(
     df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, 
@@ -20,21 +22,27 @@ def write_toa5_file(
 ) -> Path:
     output_path = Path(output_path)
     
-    if "TIMESTAMP" in header.names and "RECORD" in header.names:
-        ascii_header = format_toa5_header(header, False, False)
-    elif "TIMESTAMP" in header.names:    
-        ascii_header = format_toa5_header(header, False, include_record)
-    elif "RECORD" in header.names:
-        ascii_header = format_toa5_header(header, include_timestamp, True)
-    else:  # most common outcome
-        ascii_header = format_toa5_header(header, include_timestamp, include_record)
+    warn = get_global_warn()
+
+    if df.index.name == "TIMESTAMP":
+        df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
+    elif df.index.name == "RECORD":
+        df = df.reset_index().rename(columns={"index": "RECORD"})
+
+    if "TIMESTAMP" not in df.columns:
+        if include_timestamp:
+            warn("TIMESTAMP column not found in header. It will not be included in the TOA5 header.")
+        include_timestamp = False
+    if "RECORD" not in df.columns:
+        if include_record:
+            warn("RECORD column not found in header. It will not be included in the TOA5 header.")
+        include_record = False
+    ascii_header = format_toa5_header(header, include_timestamp, include_record)
 
     with open(output_path, "w") as output_buffer:
         if write_header:
             output_buffer.write(ascii_header)
-        if df.index.name == "TIMESTAMP":
-            df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
-        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r"%Y-%m-%d %H:%M:%S.%f")
         split_ts = df["TIMESTAMP"].str.split(".")
         df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
         
@@ -79,6 +87,7 @@ def write_toa5_file(
         elif "TIMESTAMP" in df.columns:
             df.sort_values("TIMESTAMP", inplace=True)
 
+        # TODO: this breaks with TOB1 and store_timestamp=True and store_record=True
         df.to_csv(
             output_buffer, 
             index=False, 
