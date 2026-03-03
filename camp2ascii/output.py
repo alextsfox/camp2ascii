@@ -106,6 +106,7 @@ def write_toa5_file(
             lineterminator="\n",
         )
 
+    # TODO: this could be turned into a generator that yields the dataframe. Depending on configuration, this generator is then called by an output function that either writes the dataframe to a TOA5, generic CSV, feather, parquet, or just passes the dataframe through. This would also make our timedate filenames and split by time functinoality easier to implement. This function would be renamed something like format_output_df or something
     # TODO: add a strict_toa5_format option that, when enabled, writes the file line-by-line, exactly with toa5 specifications. When disabled, we can write the file more efficiently and using less business logic, but the output may not be strictly compliant with toa5 specifications
 
     log = get_global_log()
