@@ -106,18 +106,7 @@ def write_toa5_file(
             lineterminator="\n",
         )
 
-        # # TODO: this breaks with TOB1 and store_timestamp=True and store_record=True
-        # df.to_csv(
-        #     output_buffer, 
-        #     index=False, 
-        #     na_rep='NAN', 
-        #     doublequote=False,
-        #     encoding='ascii',  
-        #     quoting=csv.QUOTE_NONNUMERIC,
-        #     lineterminator="\n", 
-        #     escapechar="\\",
-        #     header=False,
-        # )
+    # TODO: add a strict_toa5_format option that, when enabled, writes the file line-by-line, exactly with toa5 specifications. When disabled, we can write the file more efficiently and using less business logic, but the output may not be strictly compliant with toa5 specifications
 
     log = get_global_log()
     log(f"Wrote output file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")
