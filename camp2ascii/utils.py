@@ -104,9 +104,9 @@ def toa5_to_pandas(
                 # quit as soon as we fail to parse a non-na value
                 break
 
-    if index_col not in df.columns:
-        raise ValueError(f"Index column {index_col} not found in {path.relative_to(path.parent.parent.parent)} columns.")
     if index_col is not None:
+        if index_col not in df.columns:
+            raise ValueError(f"Index column {index_col} not found in {path.relative_to(path.parent.parent.parent)} columns.")
         df.set_index(index_col, inplace=True)
         if sort_index:
             df.sort_index(inplace=True)
