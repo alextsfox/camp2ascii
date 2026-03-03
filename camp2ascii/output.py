@@ -42,7 +42,7 @@ def write_toa5_file(
     with open(output_path, "w") as output_buffer:
         if write_header:
             output_buffer.write(ascii_header)
-        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r"%Y-%m-%d %H:%M:%S.%f").str.rstrip("0").str.rstrip(".")
+        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r'%Y-%m-%d %H:%M:%S.%f')#.str.rstrip("0").str.rstrip(".").apply(lambda x: f'"{x}"')
         split_ts = df["TIMESTAMP"].str.split(".")
         df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
         
@@ -61,12 +61,13 @@ def write_toa5_file(
                     continue
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "UINT2":
-                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999).astype("str").str.replace("-9999", '"NAN"')
+                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)#.astype("str").str.replace("-9999", '"NAN"')
 
             if header.file_type != FileType.TOA5:
                 for name, csci_dtype in zip(header.names, header.csci_dtypes):
                     if csci_dtype in {"NSEC", "SECNANO"}:
-                        df[name] = pd.to_datetime(df[name], unit='ns', errors='coerce').dt.strftime(r"%Y-%m-%d %H:%M:%S.%f").str.rstrip("0").str.rstrip(".")
+                        # TODO: figure out how to truncate subsecond precision where appropriate
+                        df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime(r'%Y-%m-%d %H:%M:%S.%f')#.str.rstrip("0").str.rstrip(".").apply(lambda x: f'"{x}""')
 
             # do this before rounding so that we don't accidentally quote numeric fields that have been formatted
             for col in df:

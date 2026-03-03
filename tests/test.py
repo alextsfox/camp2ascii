@@ -49,6 +49,8 @@ class TestCamp2Ascii(TestCase):
                         pd.api.types.is_string_dtype(cc_df[col])
                         or pd.api.types.is_string_dtype(c2a_df[col])
                     ):
+                        cc_df[col] = cc_df[col].str.replace(r"\'", "'")
+                        c2a_df[col] = c2a_df[col].str.replace(r"\'", "'")
                         cc_df[col] = cc_df[col].map(_string_to_hash)
                         c2a_df[col] = c2a_df[col].map(_string_to_hash)
                     cc_df[col] = cc_df[col].astype(np.float64)
@@ -59,7 +61,5 @@ class TestCamp2Ascii(TestCase):
 
                 self.assertTrue(np.allclose(cc_df, c2a_df, equal_nan=True), f"TOB conversion did not match reference data for file {c2a_file.name}")
         finally:
-            for c2a_file in out_files:
-                c2a_file.unlink(missing_ok=True)
-            for c2a_file in out_dir.glob("*.log"):
+            for c2a_file in out_dir.iterdir():
                 c2a_file.unlink(missing_ok=True)
