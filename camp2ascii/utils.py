@@ -71,6 +71,8 @@ def toa5_to_pandas(
         for i, col in enumerate(dtypes):
             if dtypes[col] is None:
                 dtypes[col] = "float"
+
+    print(dtypes)
                 
 
     df = pd.read_csv(

@@ -42,7 +42,7 @@ def write_toa5_file(
     with open(output_path, "w") as output_buffer:
         if write_header:
             output_buffer.write(ascii_header)
-        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r"%Y-%m-%d %H:%M:%S.%f")
+        df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r"%Y-%m-%d %H:%M:%S.%f").str.rstrip("0").str.rstrip(".")
         split_ts = df["TIMESTAMP"].str.split(".")
         df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
         
@@ -55,29 +55,34 @@ def write_toa5_file(
         # these values are already garbage, so we ignore the warning.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)  # suppress warnings about NaNs being inserted when converting to integers
-            for col in df.select_dtypes('float'):
-                if col not in header.names or header.file_type == FileType.TOA5:
-                    continue
-                csci_dtype = header.csci_dtypes[header.names.index(col)]
-                if csci_dtype == "FP2":
-                    df[col] = df[col].round(3)
-                elif csci_dtype in {"IEEE4", "IEEE4B"}:
-                    df[col] = df[col].round(8)
-                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
-                    df[col] = df[col].round(16)
 
-            # TODO: more consistent handling of nans
             for col in df.select_dtypes('integer'):
                 if col not in header.names or header.file_type == FileType.TOA5:
                     continue
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "UINT2":
-                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999)
+                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999).astype("str").str.replace("-9999", '"NAN"')
 
             if header.file_type != FileType.TOA5:
                 for name, csci_dtype in zip(header.names, header.csci_dtypes):
                     if csci_dtype in {"NSEC", "SECNANO"}:
-                        df[name] = pd.to_datetime(df[name], unit='ns').dt.strftime(r"%Y-%m-%d %H:%M:%S.%f")
+                        df[name] = pd.to_datetime(df[name], unit='ns', errors='coerce').dt.strftime(r"%Y-%m-%d %H:%M:%S.%f").str.rstrip("0").str.rstrip(".")
+
+            # do this before rounding so that we don't accidentally quote numeric fields that have been formatted
+            for col in df:
+                if pd.api.types.is_string_dtype(df[col]):
+                    df[col] = df[col].apply(lambda x: f'"{x}"' if pd.notna(x) else '"NAN"')
+
+            for col in df.select_dtypes('float'):
+                if col not in header.names or header.file_type == FileType.TOA5:
+                    continue
+                csci_dtype = header.csci_dtypes[header.names.index(col)]
+                if csci_dtype == "FP2":
+                    df[col] = df[col].apply(lambda x: f"{x:.4g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
+                elif csci_dtype in {"IEEE4", "IEEE4B"}:
+                    df[col] = df[col].apply(lambda x: f"{x:.8g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
+                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
+                    df[col] = df[col].apply(lambda x: f"{x:.16g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
 
         if header.file_type == FileType.TOB1:
             df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
@@ -87,18 +92,31 @@ def write_toa5_file(
         elif "TIMESTAMP" in df.columns:
             df.sort_values("TIMESTAMP", inplace=True)
 
-        # TODO: this breaks with TOB1 and store_timestamp=True and store_record=True
         df.to_csv(
-            output_buffer, 
-            index=False, 
-            na_rep='NAN', 
+            output_buffer,
+            index=False,
+            na_rep='"NAN"',
             doublequote=False,
-            encoding='ascii',  
-            quoting=csv.QUOTE_NONNUMERIC,
-            lineterminator="\n", 
             escapechar="\\",
+            quotechar="'",
+            quoting=False,
             header=False,
+            encoding="ascii",
+            lineterminator="\n",
         )
+
+        # # TODO: this breaks with TOB1 and store_timestamp=True and store_record=True
+        # df.to_csv(
+        #     output_buffer, 
+        #     index=False, 
+        #     na_rep='NAN', 
+        #     doublequote=False,
+        #     encoding='ascii',  
+        #     quoting=csv.QUOTE_NONNUMERIC,
+        #     lineterminator="\n", 
+        #     escapechar="\\",
+        #     header=False,
+        # )
 
     log = get_global_log()
     log(f"Wrote output file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")
