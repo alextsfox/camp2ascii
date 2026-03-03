@@ -40,15 +40,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "1: show warnings (default)\n"\
         "2: show all warnings and logs\n"\
         "3: write all warnings and logs (except pbar) to a file named .camp2ascii_*.log in the output directory.")
-    parser.add_argument("-time-interval", dest="time_interval", default=None, help="Time interval for output file splitting (e.g., '15min').")
+    # parser.add_argument("-time-interval", dest="time_interval", default=None, help="Time interval for output file splitting (e.g., '15min').")
     parser.add_argument("-timedate-filenames", dest="timedate_filenames", choices=[0, 1, 2], default=0, type=int, help="Name files based on first timestamp.\n"\
         "0: disabled\n"\
         "1: YYYY_MM_DD_HHMM\n"\
         "2: YYYY_DDD_HHMM")
-    parser.add_argument("-contiguous-timeseries", dest="contiguous_timeseries", choices=[0, 1, 2], type=int, default=0, help="Whether to stitch fill in missing timestamps in the final output files with NANs.\n"\
-        "0: disabled (default)\n"\
-        "1: conservative. Missing timestamps fill with NANs in existing output files (after time splitting).\n"\
-        "2: aggressive. If used with time_interval, also generate files containing all NANs if necessary to fill gaps between existing files.")
+    # parser.add_argument("-contiguous-timeseries", dest="contiguous_timeseries", choices=[0, 1, 2], type=int, default=0, help="Whether to stitch fill in missing timestamps in the final output files with NANs.\n"\
+    #     "0: disabled (default)\n"\
+    #     "1: conservative. Missing timestamps fill with NANs in existing output files (after time splitting).\n"\
+    #     "2: aggressive. If used with time_interval, also generate files containing all NANs if necessary to fill gaps between existing files.")
     parser.add_argument("-hide-timestamps", dest="store_timestamp", action="store_false", help="Do not include the TIMESTAMP field in the output files.")
     parser.add_argument("-hide-record", dest="store_record_number", action="store_false", help="Do not include the RECORD field in the output files.")
     parser.add_argument("-output-format", dest="output_format", choices=["toa5", "csv", "feather", "parquet"], default="toa5", help="Output file format. Default is TOA5.")
@@ -84,6 +84,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         case _:
             raise ValueError(f"Invalid output format: {args.output_format}")
 
+    contiguous_timeseries = None
+    time_interval = None
     try:
         n_invalid = args.n_invalid if args.n_invalid > 0 else None
         out_files = c2a_main(
@@ -93,9 +95,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             pbar=args.pbar,
             store_record_numbers=args.store_record_number,
             store_timestamp=args.store_timestamp,
-            time_interval=args.time_interval,
+            time_interval=time_interval,
             timedate_filenames=args.timedate_filenames,
-            contiguous_timeseries=args.contiguous_timeseries,
+            contiguous_timeseries=contiguous_timeseries,
             append_to_last_file=False,
             mode="cli",
             log_file=log_file,

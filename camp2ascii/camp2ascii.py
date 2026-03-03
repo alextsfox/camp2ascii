@@ -38,13 +38,24 @@ if TYPE_CHECKING:
 #     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
 # append_to_last_file: bool, optional
 #     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
+# time_interval: datetime.timedelta | str | None, optional
+#     Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
+#     When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
+#     Only files with identical ASCII headers will be matched together.
+#     Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
+#     Valid time intervals are datetime.timdelta objects or any valid pandas time frequency string.
+# contiguous_timeseries: int, optional
+#     Whether to stitch fill in missing timestamps in the final output files with NANs.
+#     0: disabled (default)
+#     1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
+#     2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
         n_invalid: int = 0, 
-        time_interval: datetime.timedelta | None = None,
+        # time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
-        contiguous_timeseries: int = 0,
+        # contiguous_timeseries: int = 0,
         store_timestamps: bool = True,
         store_record_number: bool = True,
         output_format: int = 0,
@@ -65,19 +76,8 @@ def camp2ascii(
         Stop after encountering N invalid data frames. Default is 0 (never stop).
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
         As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
-    time_interval: datetime.timedelta | str | None, optional
-        Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
-        When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
-        Only files with identical ASCII headers will be matched together.
-        Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
-        Valid time intervals are datetime.timdelta objects or any valid pandas time frequency string.
     timedate_filenames: int | None, optional
         name files based on the first timestamp in file. Default is None. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
-    contiguous_timeseries: int, optional
-        Whether to stitch fill in missing timestamps in the final output files with NANs.
-        0: disabled (default)
-        1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
-        2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
     store_timestamps: bool, optional
         Whether to include the TIMESTAMP field in the output files. Default is True.
     store_record_number: bool, optional
@@ -119,6 +119,9 @@ def camp2ascii(
         log_file_buffer = open(log_file, "w")
     set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
+
+    time_interval = None
+    contiguous_timeseries = 0
 
     try:
         return _main(
