@@ -20,7 +20,7 @@ pip install camp2ascii
 
 The following command calls the CLI:
 ```bash
-camp2ascii -i ./64293_20Hz*.dat -odir ./ascii_files -pbar
+camp2ascii ./64293_20Hz*.dat -odir ./ascii_files -pbar
 ```
 
 This will attempt to convert all files matching the glob string `./64293_Metdata*.dat` from TOB (binary) format to TOA5 (ASCII) format, outputting the resulting files to the `./ascii_files` directory. A progress bar will be displayed.

@@ -1,3 +1,7 @@
+# 1.0.3
+* Thank you to Stephen Chan for reporting some more bugs!
+* Updated the usage statement in the README
+
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.
 * Overflow warnings from rounding values > ~10^30 are now suppressed
