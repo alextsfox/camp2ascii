@@ -3,36 +3,13 @@
 import csv
 from pathlib import Path
 import warnings
-from collections.abc import Any
 
 import pandas as pd
 
 
-from .formats import UINT2_NAN, Config, FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
+from .formats import UINT2_NAN, FileType, TOA5Header, TOB1Header, TOB2Header, TOB3Header
 from .headers import format_toa5_header
 from .logginghandler import get_global_log
-
-def write_csv_file(
-    df: pd.DataFrame, output_path: Any, include_timestamp: bool = True, include_record: bool = True
-):
-    """write a generic CSV file, with the option to include or exclude TIMESTAMP and RECORD columns. """
-    if df.index.name == "TIMESTAMP":
-        df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
-    elif df.index.name == "RECORD":
-        df = df.reset_index().rename(columns={"index": "RECORD"})
-    df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime(r"%Y-%m-%d %H:%M:%S.%f")
-    split_ts = df["TIMESTAMP"].str.split(".")
-    df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
-    
-    if not include_record:
-        df.drop(columns="RECORD", inplace=True, errors='ignore')
-    if not include_timestamp:
-        df.drop(columns="TIMESTAMP", inplace=True, errors='ignore')
-    
-    df.to_csv(
-        output_path, 
-        index=False,, doublequote=False, encoding='ascii', quoting=csv.QUOTE_NONNUMERIC, lineterminator="\n
-    )
 
 def write_toa5_file(
     df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, 
@@ -41,7 +18,6 @@ def write_toa5_file(
     include_record: bool = True,
     write_header: bool = True,
 ) -> Path:
-    """write a strictly formatted TOA5 file, with the option to include or exclude the TIMESTAMP and RECORD columns. """
     output_path = Path(output_path)
     
     if "TIMESTAMP" in header.names and "RECORD" in header.names:
@@ -58,8 +34,6 @@ def write_toa5_file(
             output_buffer.write(ascii_header)
         if df.index.name == "TIMESTAMP":
             df = df.reset_index().rename(columns={"index": "TIMESTAMP"})
-        elif df.index.name == "RECORD":
-            df = df.reset_index().rename(columns={"index": "RECORD"})
         df["TIMESTAMP"] = df["TIMESTAMP"].dt.strftime("%Y-%m-%d %H:%M:%S.%f")
         split_ts = df["TIMESTAMP"].str.split(".")
         df["TIMESTAMP"] = split_ts.str[0] + "." + split_ts.str[1].str[:3]  # millisecond precision
