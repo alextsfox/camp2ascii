@@ -52,7 +52,7 @@ def write_toa5_file(
                     continue
                 csci_dtype = header.csci_dtypes[header.names.index(col)]
                 if csci_dtype == "FP2":
-                    df[col] = df[col].round(4)
+                    df[col] = df[col].round(3)
                 elif csci_dtype in {"IEEE4", "IEEE4B"}:
                     df[col] = df[col].round(8)
                 elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:

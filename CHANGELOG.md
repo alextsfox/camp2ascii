@@ -1,6 +1,8 @@
 # 1.0.3
 * Thank you to Stephen Chan for reporting some more bugs!
 * Updated the usage statement in the README
+* Enabled options to hide the TIMESTAMP and RECORD fields in the output files as an experimental feature.
+* 
 
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.

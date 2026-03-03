@@ -41,10 +41,12 @@ def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
         n_invalid: int = 0, 
-        pbar: bool = False, 
         time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
         contiguous_timeseries: int = 0,
+        store_timestamps: bool = True,
+        store_record_number: bool = True,
+        pbar: bool = False, 
         verbose: int = 1,
 ) -> list[Path]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
@@ -74,6 +76,10 @@ def camp2ascii(
         0: disabled (default)
         1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
         2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
+    store_timestamps: bool, optional
+        Whether to include the TIMESTAMP field in the output files. Default is True.
+    store_record_number: bool, optional
+        Whether to include the RECORD field in the output files. Default is True.
     pbar : bool, optional
         Print a progress bar to stdout (requires tqdm). Default is False.
     verbose: int, optional
@@ -107,8 +113,8 @@ def camp2ascii(
             output_dir=output_dir,
             n_invalid=n_invalid,
             pbar=pbar,
-            store_record_numbers=True,
-            store_timestamp=True,
+            store_record_numbers=store_timestamp,
+            store_timestamp=store_timestamp,
             time_interval=time_interval,
             timedate_filenames=timedate_filenames,
             contiguous_timeseries=contiguous_timeseries,
@@ -213,6 +219,11 @@ def _main(
     if append_to_last_file:
         warn("append_to_last_file is not implemented currently. This option will be ignored.")
         append_to_last_file = False
+
+    if not store_timestamp:
+        warn("Hiding the TIMESTAMP column in output files is an experimental feature. Use with caution and verify that output files are formatted as expected.")
+    if not store_record_numbers:
+        warn("Hiding the RECORD column in output files is an experimental feature. Use with caution and verify that output files are formatted as expected.")
     
     cfg = Config(
         input_files=input_files,

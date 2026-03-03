@@ -48,6 +48,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "0: disabled (default)\n"\
         "1: conservative. Missing timestamps fill with NANs in existing output files (after time splitting).\n"\
         "2: aggressive. If used with time_interval, also generate files containing all NANs if necessary to fill gaps between existing files.")
+    parser.add_argument("-hide-timestamps", dest="store_timestamp", action="store_false", help="Do not include the TIMESTAMP field in the output files.")
+    parser.add_argument("-hide-record", dest="store_record_number", action="store_false", help="Do not include the RECORD field in the output files.")
     return parser.parse_args(argv)
 
 
@@ -72,8 +74,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output_dir=out_dir,
             n_invalid=n_invalid,
             pbar=args.pbar,
-            store_record_numbers=True,
-            store_timestamp=True,
+            store_record_numbers=args.store_record_number,
+            store_timestamp=args.store_timestamp,
             time_interval=args.time_interval,
             timedate_filenames=args.timedate_filenames,
             contiguous_timeseries=args.contiguous_timeseries,
