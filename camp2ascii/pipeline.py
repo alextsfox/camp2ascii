@@ -208,10 +208,12 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
 
     nbytes_proc_total = 0
     try:
+        # generator for lazy eval
         process_file_gen = ((*process_file(path, cfg.stop_cond), path) for path in cfg.input_files)
         # matching_file_dict: dict[int, list[pd.DataFrame]] = {}
         while True:
             
+            # skip any files that raise errors during processing, but log the error and the file that caused it
             try:
                 df, header, path = next(process_file_gen, (None, None, None))
             except Exception as e:
@@ -223,11 +225,13 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
                     cfg.pbar.n = nbytes_proc_total
                     cfg.pbar.refresh()
 
+            # end of iteration
             if df is None:
                 break
 
             # here, we can do the splicing to make contiguous or time-interval dataframes before we write them out
 
+            # name the files that get written
             if cfg.output_format != OutputFormat.PANDAS:
                 # we have a prefix, which is either TOA5_
                 # we have the original file stem
@@ -278,63 +282,3 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
     finally:
         if log_file_buffer is not None:
             log_file_buffer.close()
-
-
-
-# def execute_config(cfg: Config) -> list[Path]:
-
-#     # find the most recent files in the output directory, grouped by header hash
-#     if cfg.append_to_last_file:
-#         last_file_dict = build_matching_file_dict(cfg.out_dir.glob("TOA5_*.dat"))
-#         for k, group in last_file_dict.items():
-#             last_file_dict[k] = order_files_by_time(group)[0][-1]
-    
-#     output_paths = []
-#     for i, path in enumerate(cfg.input_files):
-#         df, header = process_file(path, cfg.stop_cond)
-
-#         out_path = Path(cfg.out_dir) / ("TOA5_" + path.name)
-#         if out_path.exists():
-#             out_path = out_path.with_stem(out_path.stem + f"_{i}")
-#         # the time splitting function does its own thing with filenames, so we exclude that case here
-#         if cfg.timedate_filenames is not None and cfg.time_interval is None:
-#             out_path = out_path.with_stem(out_path.stem + "_" + df["TIMESTAMP"].min().strftime(cfg.timedate_filenames))
-#         output_paths.append(out_path)
-
-#         out_path = write_toa5_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
-#         if cfg.pbar is not None:
-#             cfg.pbar.update(path.stat().st_size)
-
-#     matching_file_dict = build_matching_file_dict(output_paths)
-#     if cfg.append_to_last_file:
-#         # update the last_file_dict with any new files whose header hashes are not already in last_file_dict
-#         for k, group in matching_file_dict.items():
-#             first_new_file = order_files_by_time(group)[0][0]
-#             last_file_dict.setdefault(k, first_new_file)
-#         for k, last_path in last_file_dict.items():
-#             with open(last_path, "a") as last_file_buff:
-#                 for new_path in matching_file_dict.get(k, []):
-#                     # don't want to append a file to itself!
-#                     if new_path == last_path:
-#                         continue
-#                     with open(new_path, "r") as new_file_buff:
-#                         # skip 4 header lines
-#                         for _ in range(4):
-#                             next(new_file_buff, None) 
-#                         last_file_buff.write(new_file_buff.read())
-#         output_paths_2 = list(last_file_dict.values())
-#         for path in output_paths:
-#             if path not in output_paths_2:
-#                 path.unlink()
-#         output_paths = output_paths_2
-
-#     if cfg.time_interval is not None:
-#         output_paths_2 = []
-#         for matching_files in matching_file_dict.values():
-#             output_paths_2.extend(split_files_by_time_interval(matching_files, cfg))
-#         for path in output_paths:
-#             if path not in output_paths_2:
-#                 path.unlink()
-#         output_paths = output_paths_2
-
-#     return output_paths
