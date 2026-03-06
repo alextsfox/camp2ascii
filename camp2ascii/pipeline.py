@@ -204,11 +204,27 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
     set_global_warn(mode=cfg.mode, verbose=cfg.verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode=cfg.mode, verbose=cfg.verbose, logfile_buffer=log_file_buffer)
 
+    warn = get_global_warn()
+
+    nbytes_proc_total = 0
     try:
         process_file_gen = ((*process_file(path, cfg.stop_cond), path) for path in cfg.input_files)
         # matching_file_dict: dict[int, list[pd.DataFrame]] = {}
-        while (x := next(process_file_gen, None)) is not None:
-            df, header, path = x
+        while True:
+            
+            try:
+                df, header, path = next(process_file_gen, (None, None, None))
+            except Exception as e:
+                warn(f"Error processing file {path}: {e}. Skipping this file.")
+                continue
+            finally:
+                if cfg.pbar is not None:
+                    nbytes_proc_total += path.stat().st_size
+                    cfg.pbar.n = nbytes_proc_total
+                    cfg.pbar.refresh()
+
+            if df is None:
+                break
 
             # here, we can do the splicing to make contiguous or time-interval dataframes before we write them out
 
