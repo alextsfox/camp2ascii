@@ -219,15 +219,13 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
             except Exception as e:
                 warn(f"Error processing file {path}: {e}. Skipping this file.")
                 continue
-            finally:
-                if cfg.pbar is not None:
-                    nbytes_proc_total += path.stat().st_size
-                    cfg.pbar.n = nbytes_proc_total
-                    cfg.pbar.refresh()
-
             # end of iteration
             if df is None:
                 break
+            if cfg.pbar is not None:
+                nbytes_proc_total += path.stat().st_size
+                cfg.pbar.n = nbytes_proc_total
+                cfg.pbar.refresh()
 
             # here, we can do the splicing to make contiguous or time-interval dataframes before we write them out
 
