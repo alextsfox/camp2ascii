@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
 from typing import TYPE_CHECKING
-from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -36,7 +35,6 @@ class OutputFormat(Enum):
     FEATHER = 2
     PARQUET = 3
     PANDAS = 4
-    PICKLE = 5
 
 @dataclass(frozen=True, slots=True)
 class Config:
@@ -54,7 +52,6 @@ class Config:
     verbose: int
     mode: str
     log_file: Path | None
-    writer: Callable | None
 
 class FileType(Enum):
     TOB1 = auto()
@@ -68,6 +65,7 @@ FRAME_HEADER_NBYTES = {
     FileType.TOB2: 4,
 }
 FRAME_FOOTER_NBYTES = 4
+
 
 # Header dataclasses
 @dataclass(frozen=True, slots=True)
