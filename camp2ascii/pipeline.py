@@ -3,198 +3,363 @@ from __future__ import annotations
 from pathlib import Path
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
+import datetime
+from glob import glob
+import tempfile
 
-import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
 import pandas as pd
 
-from .formats import FileType, Footer, TOA5Header, TOB3Header, TOB2Header, TOB1Header, Config, TO_EPOCH, OutputFormat
-from .decode import (
-    FRAME_HEADER_DTYPE, FINAL_TYPES,
-    decode_fp2, decode_fp4, decode_nsec, decode_secnano, decode_frame_header_timestamp, decode_bool, decode_bool8
-)
-from .headers import parse_file_header
-from .ingest import ingest_tob3_data, ingest_tob2_data, ingest_tob1_data
-from .output import write_toa5_file, write_csv_file, write_feather_file, write_parquet_file
-from .restructure import build_matching_file_dict, split_files_by_time_interval, order_files_by_time
+from .formats import Config, OutputFormat, TOA5Header
+from .output import write_pickle_file, write_toa5_file, write_csv_file, write_feather_file, write_parquet_file
 from .warninghandler import get_global_warn, set_global_warn
-from .logginghandler import get_global_log, set_global_log
-from .utils import toa5_to_pandas
+from .logginghandler import set_global_log
+from .ingest import process_file
+from .restructure import make_timeseries_contiguous
 
 if TYPE_CHECKING:
     from tqdm import tqdm
 
+class Pipeline:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.log_file_buffer = None
+        if self.cfg.log_file is not None:
+            self.log_file_buffer = open(self.cfg.log_file, "a")
+        set_global_warn(mode=self.cfg.mode, verbose=self.cfg.verbose, logfile_buffer=self.log_file_buffer)
+        set_global_log(mode=self.cfg.mode, verbose=self.cfg.verbose, logfile_buffer=self.log_file_buffer)
+        self.warn = get_global_warn()
 
-def data_to_pandas(data_structured: np.ndarray, header: TOB3Header | TOB2Header | TOB1Header) -> pd.DataFrame:
-    """convert data in a structured dtype numpy array to a pandas dataframe.
-    For a TOB2 or TOB3 file, this does not include information from the headers and footers, which is handled separately in compute_timestamps_and_records and minor_frames_to_pandas"""
+        self.file_processor = ((*process_file(path, cfg.stop_cond), path) for path in self.cfg.input_files)
+        self.nbytes_proc_total = 0
+
+        self.matching_file_dict: dict[int, list[Path]] = {}
+        self.intermediate_file_starts: dict[Path, pd.Timestamp] = {}
+        self.intermediate_file_ends: dict[Path, pd.Timestamp] = {}
+        self.out_file_headers: dict[Path, TOA5Header] = {}
+
+    def __call__(self) -> Iterator[Path] | Iterator[pd.DataFrame]:
+        first_pass = self.first_pass()
+        if self.cfg.time_interval is not None:
+            # TODO: messy....we have to consume first pass to set state variables
+            _ = list(first_pass)  # consume the first pass to populate the matching_file_dict and intermediate_file_starts/ends for the second pass
+            return self.split_by_time_interval()
+        return first_pass
+
+    def first_pass(self):
+        # the first pass is responsible for reading the input files, converting to the desired output format, and writing to disk. 
+        # If time_interval is enabled, the files will be written to an intermediate location with an intermediate format for easier reprocessing in the second pass.
+        out_dir = self.cfg.out_dir
+        writer = self.cfg.writer
+        output_format = self.cfg.output_format
+        store_timestamp = self.cfg.store_timestamp
+        store_record_numbers = self.cfg.store_record_numbers
+
+        # will need to do a first pass and save to an intermediate format before reprocessing
+        if self.cfg.time_interval is not None:
+            # TODO: apparently the temp dir can be cleaned up before we're done with it???
+            out_dir = Path(tempfile.TemporaryDirectory().name)
+            writer = write_pickle_file
+            output_format = OutputFormat.PICKLE
+            store_timestamp = True
+            store_record_numbers = True
+        
+        while True:
+            try:
+                df, header, path = next(self.file_processor, (None, None, None))
+            # Handle corrupt file
+            except Exception as e:
+                self.warn(f"Error processing file {path}: {e}. Skipping this file.")
+                continue
+            finally:
+                if self.cfg.pbar is not None and path is not None:
+                    self.nbytes_proc_total += path.stat().st_size
+                    self.cfg.pbar.n = self.nbytes_proc_total
+                    self.cfg.pbar.refresh()
+
+            # StopIteration
+            if df is None:
+                break
+
+            if output_format != OutputFormat.PANDAS:
+                out_path = create_filename(out_dir, path, df, output_format, self.cfg.timedate_filenames)
+                writer(df, header, out_path, store_timestamp, store_record_numbers)
+
+                # this is prepping for a possible second pass
+                if self.cfg.time_interval is not None:
+                    self.matching_file_dict.setdefault((header.file_type, header.table_name, header.logger_program_signature, header.logger_sn), []).append(out_path)
+                    self.out_file_headers[out_path] = header
+                    self.intermediate_file_starts[out_path] = df["TIMESTAMP"].min()
+                    self.intermediate_file_ends[out_path] = df["TIMESTAMP"].max()
+                yield out_path
+            else:
+                yield df
+
+    def split_by_time_interval(self) -> Iterator[Path] | Iterator[pd.DataFrame]:
+
+        all_out_files_sorted_by_time = sorted(self.intermediate_file_starts.keys(), key=lambda k: self.intermediate_file_starts[k])
+
+        for unique_header, file_list in self.matching_file_dict.items():
+            sorted_files = (f for f in all_out_files_sorted_by_time if f in file_list)
+
+            chad = None
+            fn = next(sorted_files, None)
+            if fn is None:
+                continue
+            fn = Path(fn)
+            df = pd.read_pickle(fn)
+            header = self.out_file_headers[fn]
+
+            out_file_base_name = '_'.join(fn.name.split("_")[:-2])  # strip the numerical and timedate elements from the filename
+
+            nondupes = ~df.index.duplicated() 
+            freq = df.loc[nondupes].index.diff().min()
+            mode_time_diff = df.loc[nondupes].index.diff().total_seconds().value_counts().sort_values().index[-1]
+            if mode_time_diff != freq.total_seconds():
+                self.warn(f"detected irregular timestamp intervals in file {fn.name}. Minimum interval is {freq}, but the most common interval is {mode_time_diff}. Using {freq} as the interval.")
+
+            i = 0
+            while fn is not None:
+                # prepend any leftover data from the previous file
+                if chad is not None:
+                    df = pd.concat([chad, df])
+                    chad = None
+
+                # continually append dataframes until the time interval is exceeded.
+                # a single file may contain multiple time intervals, or less than one time interval.
+                start_time = df.index.min().floor(freq=self.cfg.time_interval)
+                end_time = df.index.max().floor(freq=self.cfg.time_interval)
+                while end_time - start_time < self.cfg.time_interval:
+                    next_fn = next(sorted_files, None)
+                    if next_fn is None:
+                        break
+                    next_fn = Path(next_fn)
+                    next_df = pd.read_pickle(next_fn)
+                    
+                    end_time = next_df.index.max().floor(freq=self.cfg.time_interval)
+                    df = pd.concat([df, next_df])
+                df = df.sort_index()
+
+                # carry over leftover information to the next iteration
+                chad = df.loc[end_time:]
+
+                # fill dataframe with NANs and trim to the exact time interval
+                if self.cfg.contiguous_timeseries == 2:
+                    df = make_timeseries_contiguous(df, start_time, end_time, freq).loc[start_time:end_time]
+
+                # split dataframe into the requested time intervals and write to disk
+                time_intervals = pd.interval_range(start=start_time, end=end_time, freq=self.cfg.time_interval)
+                for interval in time_intervals:
+                    left, right = interval.left, interval.right - freq
+                    match self.cfg.contiguous_timeseries:
+                        case 0:
+                            interval_df = df.loc[max(left, df.index.min()):min(right, df.index.max())]
+                        case 1:
+                            interval_df = make_timeseries_contiguous(df.loc[left:right], left, right, freq)
+                        case 2:
+                            interval_df = df.loc[left:right]
+
+                    if self.cfg.output_format != OutputFormat.PANDAS:
+                        out_path = create_filename(self.cfg.out_dir, out_file_base_name, interval_df, self.cfg.output_format, self.cfg.timedate_filenames)
+                        self.cfg.writer(interval_df, header, out_path, self.cfg.store_timestamp, self.cfg.store_record_numbers)
+                        yield out_path
+                    else:
+                        yield interval_df
+                    i += 1
+                
+                fn = next(sorted_files, None)
+                if fn is None:
+                    break
+                fn = Path(fn)
+                df = pd.read_pickle(fn)
+            
+            # save the remaining chad to disk without extending to the next time interval
+            if chad is not None:
+                if self.cfg.contiguous_timeseries in (1, 2):
+                    chad = make_timeseries_contiguous(chad, chad.index.min(), chad.index.max(), freq=freq)
+                
+                if self.cfg.output_format != OutputFormat.PANDAS:
+                    out_path = create_filename(self.cfg.out_dir, out_file_base_name, chad, self.cfg.output_format, self.cfg.timedate_filenames)
+                    self.cfg.writer(chad, header, out_path, self.cfg.store_timestamp, self.cfg.store_record_numbers)
+                    yield out_path
+                else:
+                    yield chad
+
+def create_filename(
+    out_dir: Path, 
+    input_path: Path, 
+    df: pd.DataFrame, 
+    output_format: OutputFormat, 
+    timedate_filenames: str | None
+) -> Path:
+    # name the files that get written
+    # we have a prefix, which is either TOA5_
+    # we have the original file stem
+    # we have a number we can append to the stem to avoid filename collisions
+    # we have a timedate that is either _YYYYMMDD etc or nothing
+    # we have a suffix that is either .dat, .csv, .feather, or .parquet depending on the output format
+    # in the end, we have: <prefix><stem><num><timedate><suffix>
+    prefix = ""
+    original_stem = Path(input_path).stem
+    num = 0
+    timedate = ""
+    suffix = ""
+    match output_format:
+        case OutputFormat.TOA5:
+            suffix = ".dat"
+        case OutputFormat.CSV:
+            suffix = ".csv"
+        case OutputFormat.FEATHER:
+            suffix = ".feather"
+        case OutputFormat.PARQUET:
+            suffix = ".parquet"
+        case OutputFormat.PICKLE:
+            suffix = ".pickle"
+        case _:
+            raise ValueError(f"Unsupported output format: {output_format}")
+    
+    if timedate_filenames is not None:
+        timedate = "_" + df["TIMESTAMP"].min().strftime(timedate_filenames)
+
+    while (out_path := Path(out_dir) / (prefix + original_stem + "_" + str(num) + timedate + suffix)).exists():
+        num += 1
+    return out_path
+
+def build_config(
+    input_files: str | Path, 
+    output_dir: str | Path, 
+    n_invalid: int | None = None, 
+    pbar: bool = False, 
+    store_record_numbers: bool = True,
+    store_timestamp: bool = True,
+    time_interval: datetime.timedelta | None = None,
+    timedate_filenames: int | None = None,
+    contiguous_timeseries: int = 0,
+    append_to_last_file: bool = False,
+    output_format: int = 0,
+    verbose: int=1,
+    mode: str = "api",
+    log_file: Path | None = None,
+) -> Iterator[Path] | Iterator[pd.DataFrame]:
+    """For the primary API function, see camp2ascii()."""
     warn = get_global_warn()
 
-    df = pd.DataFrame()
-    for name, t, tname in zip(header.names, header.csci_dtypes, header.intermediate_dtype.names):
-        if t == "FP2":
-            col = decode_fp2(data_structured[tname], fp2_nan=header.fp2_nan)
-        elif t == "FP4":
-            col = decode_fp4(data_structured[tname], fp4_nan=header.fp4_nan)
-        elif t == "NSEC":
-            col = decode_nsec(data_structured[tname])
-        elif t == "SECNANO":
-            col = decode_secnano(data_structured[tname])
-        elif t in {"BOOL", "BOOL4", "BOOL2"}:
-            col = decode_bool(data_structured[tname])
-        elif t == "BOOL8":
-            col = decode_bool8(data_structured[tname])
-        elif "ASCII" in t:
-            t = "ASCII"
-            try:
-                col = data_structured[tname]
-                col.astype(FINAL_TYPES[t])
-            except UnicodeDecodeError:
-                try:
-                    col = np.array([x.split(b"\x00", 1)[0].decode('ascii', errors='ignore') for x in data_structured[tname]])
-                    col = np.where(col == "", "NAN", col)  # convert empty strings to NaN for consistency with TOA5 files, which use "NAN" for missing values in ASCII fields
-                    warn(f"Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. Problematic entries will be filled with 'NAN'. Some data corruption is possible.")
-                except UnicodeDecodeError:
-                    col = np.array(["NAN"]*len(data_structured[tname]))
-                    warn(f"Unrecoverable Malformed ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be entirely filled with 'NAN'.")
-        else:
-            col = data_structured[tname]
+    # parse input files (supports glob pattern, directory, or single file)
+    if isinstance(input_files, map):
+        input_files = list(input_files)
+    if isinstance(input_files, str):
+        if "?" in input_files or "*" in input_files:
+            input_files = list(glob(input_files))
+    if isinstance(input_files, (str, Path)) and Path(input_files).is_dir():
+        input_files = list(Path(input_files).glob("*"))
+    if not isinstance(input_files, (list, tuple)):
+        input_files = [input_files]
+    input_files = [Path(p) for p in input_files]
+    
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if n_invalid == 0:
+        n_invalid = None
+    if n_invalid is not None and not isinstance(n_invalid, int):
+        raise ValueError("n_invalid must be a non-negative integer or None.")
+
+    if pbar:
         try:
-            df[name] = col.astype(FINAL_TYPES[t])
-        except UnicodeDecodeError:
-            df[name] = ""
-            warn(f"UnicodeDecodeError encountered while decoding ASCII field '{name}' in {header.path.relative_to(header.path.parent.parent.parent)}. This column will be filled with empty strings.")
-    return df
-
-def compute_timestamps_and_records(
-    headers_raw: list[bytes], 
-    footers_raw: list[bytes], 
-    header: TOB3Header,  
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """compute the timestamps and record numbers for each line of data based on the raw header and footer bytes for MAJOR frames only."""
-    nframes = len(headers_raw)
-    nlines = nframes*header.data_nlines
-    headers = structured_to_unstructured(np.frombuffer(b''.join(headers_raw), dtype=FRAME_HEADER_DTYPE[header.file_type]))
-    footers = np.empty((nframes, 9), dtype=np.float32)
-
-    # index footers...mostly for debugging for now
-    # for i, (foot, head) in enumerate(zip(footers_raw, headers)):
-    #     timestamp = decode_frame_header_timestamp(head[0], head[1], header.frame_time_res)
-    #     if header.file_type == FileType.TOB3:
-    #         record = head[2]
-    #     else:
-    #         record = -9999
-    #     footers[i] = np.array([foot.offset, foot.file_mark, foot.ring_mark, foot.empty_frame, foot.minor_frame, foot.validation, foot.validation in (header.val_stamp, int(0xFFFF ^ header.val_stamp)), timestamp, record], dtype=np.float32)
-
-    # create timestamps and records for each record
-    timestamps = np.empty(nlines, dtype=np.int64)
-    records = np.empty(nlines, dtype=np.int32)
-    for i in range(nframes):
-        beg_timestamp = decode_frame_header_timestamp(headers[i, 0], headers[i, 1], header.frame_time_res)
-        timestamps[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(
-            beg_timestamp, 
-            beg_timestamp + header.data_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
-            np.int64(header.rec_intvl*1_000)*1_000_000,
-            dtype=np.int64
-        )
-        if header.file_type == FileType.TOB3:
-            beg_record = headers[i, 2]
-            records[i*header.data_nlines:(i+1)*header.data_nlines] = np.arange(beg_record, beg_record + header.data_nlines)
-        else:
-            records[i*header.data_nlines:(i+1)*header.data_nlines] = -9999
-    records = records
-    timestamps = timestamps
-
-    return timestamps, records, footers
-
-def minor_frames_to_pandas(
-    minor_headers_raw: list[list[bytes]],
-    minor_data_raw: list[list[bytes]],
-    minor_footers_raw: list[list[Footer]],
-    header: TOB3Header | TOB2Header
-) -> pd.DataFrame:
-    """Minor frames need special processing
-    This handles converting the datablocks from the minor frames to pandas, and then handling the record numbers and timestamps for those lines based on the minor frame headers and footers.
-    """
-
-    data_structured = np.frombuffer(b''.join([b''.join(d) for d in minor_data_raw]), dtype=header.intermediate_dtype)  
-    total_lines = data_structured.shape[0]
-    timestamps = np.empty(total_lines, dtype=np.int64)
-    records = np.empty(total_lines, dtype=np.int64)
-    lineno = 0
-    for i_minor in range(len(minor_data_raw)):
-        for j_sub in range(len(minor_data_raw[i_minor])):
-            sub_header = np.frombuffer(minor_headers_raw[i_minor][j_sub], dtype=FRAME_HEADER_DTYPE[header.file_type])[0]
-            sub_tstart = decode_frame_header_timestamp(sub_header[0], sub_header[1], header.frame_time_res)
-            sub_recstart = sub_header[2] if header.file_type == FileType.TOB3 else -9999 
-
-            sub_nlines = len(minor_data_raw[i_minor][j_sub]) // header.line_nbytes
-            timestamps[lineno:lineno+sub_nlines] = np.arange(
-                sub_tstart, 
-                sub_tstart + sub_nlines*np.int64(header.rec_intvl*1_000)*1_000_000, 
-                np.int64(header.rec_intvl*1_000)*1_000_000,
-                dtype=np.int64
+            from tqdm import tqdm
+            total_bytes_to_read = sum(p.stat().st_size for p in input_files)
+            pbar = tqdm(
+                total=total_bytes_to_read, 
+                unit="B", unit_scale=True, unit_divisor=1024, 
+                desc="Processing files", 
+                mininterval=0.25
             )
-            records[lineno:lineno+sub_nlines] = np.arange(sub_recstart, sub_recstart + sub_nlines) if sub_recstart != -9999 else -9999 
-            lineno += sub_nlines
-            
-    df = data_to_pandas(data_structured, header)
+        except ImportError:
+            warn("tqdm not installed; progress bar disabled.")
+            pbar = None
+    elif not pbar:
+        pbar = None
+    else:
+        raise ValueError("Invalid value for pbar. Must be a boolean.")
+
+    match timedate_filenames:
+        case 1:
+            timedate_filenames = r"%Y_%m_%d_%H%M"
+        case 2:
+            timedate_filenames = r"%Y_%j_%H%M"
+        case None:
+            timedate_filenames = None
+        case 0:
+            timedate_filenames = None
+        case _:
+            raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
+
+    # TODO: add tests for time_interval
+    if time_interval:
+        time_interval = pd.Timedelta(time_interval).to_pytimedelta()
+        if time_interval.total_seconds() < 60.0:
+            warn(f"time_interval of {time_interval.total_seconds()}s may produce many small files. Consider increasing the time interval to at least 60 seconds.")
+        warn("time_interval is currently an experimental feature. Use with caution and verify that output files are split as expected.")
+    if time_interval and not timedate_filenames:
+        warn("time_interval is enabled but timedate_filenames is not. This may produce files with difficult-to-interpret names. Consider enabling timedate_filenames to include the timestamp in the file name.")
+
+    # TODO: add tests for contiguous_timeseries
+    if contiguous_timeseries not in (0, 1, 2):
+        raise ValueError("Invalid value for contiguous_timeseries. Must be 0 (disabled), 1 (conservative), or 2 (aggressive).")
+    if contiguous_timeseries == 0 and time_interval:
+        warn("time_interval is enabled but contiguous_timeseries is False. This may produce files with non-contiguous timestamps and no indication of missing data. Consider enabling contiguous_timeseries to fill missing timestamps with NANs.")
+    if contiguous_timeseries:
+        warn("contiguous_timeseries is currently an experimental feature. Use with caution and verify that output files have missing timestamps filled with NANs as expected.")
+
+    # TODO: make this work, probably by using a hash of the input headers and storing them in the output directory
+    # in a file called .camp2asciihistory or something
+    # when we intake files, check the binary file header hash against the hashes in .camp2asciihistory to determine whether to append to an existing file or create a new file
+    # whenever using append_to_last_file, always enable new_files_only
+    # low priority
+    append_to_last_file = bool(append_to_last_file)
+    if append_to_last_file:
+        warn("append_to_last_file is not implemented currently. This option will be ignored.")
+        append_to_last_file = False
     
-    df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-    df["RECORD"] = records
-    return df
+    if output_format not in (0, 1, 2, 3, 4, 5):
+        raise ValueError("Invalid value for output_format. Must be 0 (TOA5), 1 (CSV), 2 (Feather), 3 (Parquet), 4 (Pickle), or 5 (Pandas DataFrame).")
+    output_format = OutputFormat(output_format)
 
-def process_file(path: Path | str, n_invalid: int | None = None) -> tuple[pd.DataFrame, TOA5Header | TOB1Header | TOB2Header | TOB3Header]:
-    path = Path(path)
+    writer = None
+    match output_format:
+        case OutputFormat.TOA5:
+            writer = write_toa5_file
+        case OutputFormat.CSV:
+            writer = write_csv_file
+        case OutputFormat.FEATHER:
+            writer = write_feather_file
+        case OutputFormat.PARQUET:
+            writer = write_parquet_file
+        case OutputFormat.PICKLE:
+            writer = write_pickle_file
+        case OutputFormat.PANDAS:
+            writer = None
+        case _:
+            raise ValueError(f"Unsupported output format: {output_format}")
 
-    with open(path, "rb") as input_buff:
-        header, ascii_header_nbytes = parse_file_header(input_buff, path)
+    cfg = Config(
+        input_files=input_files,
+        out_dir=out_dir,
+        stop_cond=n_invalid,
+        pbar=pbar,
+        store_record_numbers=store_record_numbers,
+        store_timestamp=store_timestamp,
+        time_interval=time_interval,
+        timedate_filenames=timedate_filenames,
+        contiguous_timeseries=contiguous_timeseries,
+        append_to_last_file=append_to_last_file,
+        output_format=output_format,
+        verbose=verbose,
+        mode=mode,
+        log_file=log_file,
+        writer=writer,
+    )
 
-        if header.file_type in (FileType.TOB3, FileType.TOB2):
-            headers_raw, data_raw, footers_raw, minor_headers_raw, minor_data_raw, minor_footers_raw = ingest_tob3_data(input_buff, header, ascii_header_nbytes, n_invalid)
-            data_structured = np.frombuffer(b''.join(data_raw), dtype=header.intermediate_dtype)
-            
-
-            df = data_to_pandas(data_structured, header)
-            # timestamps and records are gleaned from the header information, not from the data blocks
-            timestamps, records, footers = compute_timestamps_and_records(headers_raw, footers_raw, header)
-            df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-            df["RECORD"] = records
-            df = df[[df.columns[-1]] + list(df.columns[:-1])]  # move record to the front
-
-            # minor frames need special handling
-            minor_df = minor_frames_to_pandas(minor_headers_raw, minor_data_raw, minor_footers_raw, header)
-
-            df = pd.concat([df, minor_df], ignore_index=True)
-
-        elif header.file_type == FileType.TOB1:
-            data_raw = ingest_tob1_data(input_buff, header, ascii_header_nbytes)
-            data_structured = np.frombuffer(data_raw, dtype=header.intermediate_dtype)
-            # Each line of data in a TOB1 file has everything we need, but the timestamps are stored in a special way
-            df = data_to_pandas(data_structured, header)
-            if {"SECONDS", "NANOSECONDS"}.issubset(set(header.names)):
-                timestamps = (df["SECONDS"].astype(np.int64) + TO_EPOCH)*1_000_000_000 + df["NANOSECONDS"].astype(np.int64)
-                df["TIMESTAMP"] = pd.to_datetime(timestamps, unit='ns')
-    
-
-    
-    if header.file_type == FileType.TOA5:
-        df = toa5_to_pandas(path)
-        df.reset_index(inplace=True)
-        df.rename(columns={"index": "TIMESTAMP"}, inplace=True)
-
-    if "TIMESTAMP" and "RECORD" in df.columns:
-        df = df[["TIMESTAMP", "RECORD"] + [col for col in df.columns if col not in ["TIMESTAMP", "RECORD"]]]
-        df = df.sort_values(["RECORD", "TIMESTAMP"], ignore_index=True)
-    elif "RECORD" in df.columns:
-        df = df[["RECORD"] + [col for col in df.columns if col != "RECORD"]]
-        df = df.sort_values("RECORD", ignore_index=True)
-    elif "TIMESTAMP" in df.columns:
-        df = df[["TIMESTAMP"] + [col for col in df.columns if col != "TIMESTAMP"]]
-        df = df.sort_values("TIMESTAMP", ignore_index=True)
-    
-    return df, header
-
+    return cfg
 
 def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
 

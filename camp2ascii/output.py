@@ -11,6 +11,21 @@ from .headers import format_toa5_header
 from .logginghandler import get_global_log
 from .warninghandler import get_global_warn
 
+def write_pickle_file(
+    df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, output_path: Path | str, include_timestamp: bool = True, include_record: bool = True
+):
+    """write a pickle file."""
+    output_path = Path(output_path)
+    if not include_timestamp:
+        df.drop(columns="TIMESTAMP", inplace=True, errors='ignore')
+    if not include_record:
+        df.drop(columns="RECORD", inplace=True, errors='ignore')
+    if header.file_type == FileType.TOB1:
+        df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
+    df.to_pickle(output_path)
+    log = get_global_log()
+    log(f"Wrote pickle file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")
+
 def write_csv_file(
     df: pd.DataFrame, header: TOA5Header | TOB1Header | TOB2Header | TOB3Header, output_path: Path | str, include_timestamp: bool = True, include_record: bool = True
 ):
