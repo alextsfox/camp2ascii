@@ -7,6 +7,7 @@
 * TOA5 output now more strictly adheres to the TOA5 file format, but is slightly slower as a result.
 * camp2ascii now returns an Iterator over either a list of files or pandas dataframes instead of just a list of files.
 * Errors caused by corrupt files are now handled by printing an error message and skipping the file.
+* Pyarrow is now an optional dependency. Install optional dependencies (including tqdm) using `pip install "camp2ascii[extras]"` instead of `pip install "camp2ascii[progress]".
 
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.

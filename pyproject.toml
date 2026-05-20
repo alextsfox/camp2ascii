@@ -24,7 +24,7 @@ classifiers = [
 dependencies = ["numpy>=1.21.3","pandas>=1.4.0"]
 
 [project.optional-dependencies]
-progress = ["tqdm>=4.0"]
+extras = ["tqdm>=4.0", "pyarrow>=13.0.0"]
 
 [project.urls]
 Repository = "https://github.com/alextsfox/camp2ascii"
