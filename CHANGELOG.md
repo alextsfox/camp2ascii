@@ -1,3 +1,6 @@
+# 1.1.1
+* Update readme
+
 # 1.1.0
 * Thank you to Stephen Chan for reporting some more bugs!
 * Updated the usage statement in the README

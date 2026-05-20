@@ -7,7 +7,7 @@ This tool is inspired by the identically-named camp2ascii written by Mathias Bav
 You can install `camp2ascii` using `pip`:
 
 ```bash
-pip install "camp2ascii[progress]"
+pip install "camp2ascii[extras]"
 ```
 
 or, to install without the progress bar dependency:
