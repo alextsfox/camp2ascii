@@ -13,10 +13,9 @@ __pycache__
 **.log
 **.err
 **.out
-tests/c2a/*.dat
-tests/c2a/*.log
+tests/c2a/*
 *.py
-*.ipynb
+**.ipynb
 
 publish.txt
 .venv

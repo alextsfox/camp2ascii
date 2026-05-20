@@ -15,12 +15,13 @@ from glob import glob
 from typing import TYPE_CHECKING
 from pathlib import Path
 import datetime
+from collections.abc import Iterator
 
 import pandas as pd
 
 
 from .pipeline import execute_config
-from .formats import Config
+from .formats import Config, OutputFormat
 from .warninghandler import get_global_warn, set_global_warn
 from .logginghandler import get_global_log, set_global_log
 
@@ -37,16 +38,30 @@ if TYPE_CHECKING:
 #     Convert only data that is newer than the most recent timestamp in the existing output directory. Default is False.
 # append_to_last_file: bool, optional
 #     append data to the most recent file in the output directory. To be used only when convert_only_new_data is True. Default is False.
+# time_interval: datetime.timedelta | str | None, optional
+#     Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
+#     When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
+#     Only files with identical ASCII headers will be matched together.
+#     Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
+#     Valid time intervals are datetime.timdelta objects or any valid pandas time frequency string.
+# contiguous_timeseries: int, optional
+#     Whether to stitch fill in missing timestamps in the final output files with NANs.
+#     0: disabled (default)
+#     1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
+#     2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
 def camp2ascii(
         input_files: str | Path, 
         output_dir: str | Path, 
         n_invalid: int = 0, 
-        pbar: bool = False, 
-        time_interval: datetime.timedelta | None = None,
+        # time_interval: datetime.timedelta | None = None,
         timedate_filenames: int | None = None,
-        contiguous_timeseries: int = 0,
+        # contiguous_timeseries: int = 0,
+        store_timestamps: bool = True,
+        store_record_number: bool = True,
+        output_format: int = 0,
+        pbar: bool = False, 
         verbose: int = 1,
-) -> list[Path]:
+) -> Iterator[Path] | Iterator[pd.DataFrame]:
     """Primary API function to convert Campbell Scientific TOB files to ASCII.
 
     Binary files will be read from `input_files`, converted to ASCII (TOA5 format), and written to `output_dir`.
@@ -61,19 +76,22 @@ def camp2ascii(
         Stop after encountering N invalid data frames. Default is 0 (never stop).
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.
         As a point of reference, TOB3 and TOB2 files will generally have ~2-10 lines of data per frame, and TOB1 files will have 1 line of data per frame.
-    time_interval: datetime.timedelta | str | None, optional
-        Create a new output file at this time interval, referenced to the unix epoch. Default is None (disabled).
-        When enabled, the program will run a second pass after processing all files to split the output files into the requested time intervals.
-        Only files with identical ASCII headers will be matched together.
-        Every produced file will be a contiguous timeseries, with missing timestamps filled with NANs.
-        Valid time intervals are datetime.timdelta objects or any valid pandas time frequency string.
     timedate_filenames: int | None, optional
         name files based on the first timestamp in file. Default is None. 1: use YYYY_MM_DD_HHMM format. 2: use YYYY_DDD_HHMM format.
-    contiguous_timeseries: int, optional
-        Whether to stitch fill in missing timestamps in the final output files with NANs.
-        0: disabled (default)
-        1: conservative. Any missing timestamps in the final output files will be filled with NANs to the extent of the timespan of the file.
-        2: aggressive. to 1, except if time_interval is also enabled, this will generate files containing only NANs if necessary to fill gaps between existing files.
+    store_timestamps: bool, optional
+        Whether to include the TIMESTAMP field in the output files. Default is True.
+    store_record_number: bool, optional
+        Whether to include the RECORD field in the output files. Default is True.
+    output_format: int, optional
+        0 (Default): Output in strict TOA5 format (slower, but compatible with Campbell Workflows).
+        1: Output in CSV format with no special formattting
+        2: Output in Feather format
+        3: Output in Parquet format
+        4: Output as Pandas DataFrames (not written to disk)
+
+        Options 0-3 return an iterator of Paths to the output files.
+        Option 4 returns an iterator of Pandas DataFrames.
+
     pbar : bool, optional
         Print a progress bar to stdout (requires tqdm). Default is False.
     verbose: int, optional
@@ -94,6 +112,7 @@ def camp2ascii(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_file_buffer = None
+    log_file = None
     if verbose == 3:
         log_file_number = len(list(out_dir.glob('.camp2ascii_*.log')))+1
         log_file = Path(out_dir) / f".camp2ascii_{log_file_number}.log"
@@ -101,18 +120,25 @@ def camp2ascii(
     set_global_warn(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
     set_global_log(mode="api", verbose=verbose, logfile_buffer=log_file_buffer)
 
+    time_interval = None
+    contiguous_timeseries = 0
+
     try:
         return _main(
             input_files=input_files,
             output_dir=output_dir,
             n_invalid=n_invalid,
             pbar=pbar,
-            store_record_numbers=True,
-            store_timestamp=True,
+            store_record_numbers=store_record_number,
+            store_timestamp=store_timestamps,
             time_interval=time_interval,
             timedate_filenames=timedate_filenames,
             contiguous_timeseries=contiguous_timeseries,
             append_to_last_file=False,
+            output_format = output_format,
+            verbose=verbose,
+            mode="api",
+            log_file=log_file,
         )
     finally:
         if log_file_buffer is not None:
@@ -130,7 +156,11 @@ def _main(
     timedate_filenames: int | None = None,
     contiguous_timeseries: int = 0,
     append_to_last_file: bool = False,
-):
+    output_format: int = 0,
+    verbose: int=1,
+    mode: str = "api",
+    log_file: Path | None = None,
+) -> Iterator[Path] | Iterator[pd.DataFrame]:
     """For the primary API function, see camp2ascii()."""
     warn = get_global_warn()
 
@@ -183,9 +213,6 @@ def _main(
             timedate_filenames = None
         case _:
             raise ValueError("Invalid value for timedate_filenames. Must be 1 (YYYY_MM_DD_HHMM), 2 (YYYY_DDD_HHMM), or None.")
-    # TODO: add tests for timedate_filenames
-    if timedate_filenames:
-        warn("timedate_filenames currently an experimental feature. Use with caution and verify that output files are named as expected.")
 
     # TODO: add tests for time_interval
     if time_interval:
@@ -214,6 +241,10 @@ def _main(
         warn("append_to_last_file is not implemented currently. This option will be ignored.")
         append_to_last_file = False
     
+    if output_format not in (0, 1, 2, 3, 4):
+        raise ValueError("Invalid value for output_format. Must be 0 (TOA5), 1 (CSV), 2 (Feather), 3 (Parquet), or 4 (Pandas DataFrame).")
+    output_format = OutputFormat(output_format)
+
     cfg = Config(
         input_files=input_files,
         out_dir=out_dir,
@@ -225,6 +256,10 @@ def _main(
         timedate_filenames=timedate_filenames,
         contiguous_timeseries=contiguous_timeseries,
         append_to_last_file=append_to_last_file,
+        output_format=output_format,
+        verbose=verbose,
+        mode=mode,
+        log_file=log_file,
     )
 
     # TODO: append to last file is unsafe, because it could result in data scrambling if we run this twice in the same output directory
@@ -232,9 +267,9 @@ def _main(
     # consider also just not using this argument
     # ach but this won't work for TOA5 files because they don't have file start timestamps
     # and now that I think about it, neither do TOB1 files either.
-    final_output_paths = execute_config(cfg)
+    output = execute_config(cfg)
 
-    return final_output_paths
+    return output
     
 
 
