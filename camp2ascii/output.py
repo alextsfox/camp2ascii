@@ -38,6 +38,20 @@ def write_csv_file(
             .str.rstrip("0")
             .str.rstrip(".")
         )
+
+    # format float columns according to their CSCI dtype.
+    # NaNs are left as "" so to_csv's default na_rep behavior is preserved.
+    for col in df:
+        if col not in header.names or header.file_type == FileType.TOA5:
+            continue
+        csci_dtype = header.csci_dtypes[header.names.index(col)]
+        if csci_dtype == "FP2":
+            df[col] = df[col].apply(lambda x: f"{x:.4g}" if pd.notna(x) else "")
+        elif csci_dtype in {"IEEE4", "IEEE4B"}:
+            df[col] = df[col].apply(lambda x: f"{x:.8g}" if pd.notna(x) else "")
+        elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
+            df[col] = df[col].apply(lambda x: f"{x:.16g}" if pd.notna(x) else "")
+
     df.to_csv(
         output_path, 
         index=False,
@@ -118,44 +132,44 @@ def write_toa5_file(
             ascii_header = format_toa5_header(header, include_timestamp, include_record)
             output_buffer.write(ascii_header)
         
-            # strip trailing subseconds
-            if "TIMESTAMP" in df.columns:
-                df["TIMESTAMP"] = '"' + (
-                    df["TIMESTAMP"]
+        # strip trailing subseconds
+        if "TIMESTAMP" in df.columns:
+            df["TIMESTAMP"] = '"' + (
+                df["TIMESTAMP"]
+                .dt.strftime(r'%Y-%m-%d %H:%M:%S.%f')
+                .str.rstrip("0")
+                .str.rstrip(".")
+            ) + '"'
+
+        for col in df:
+            if col not in header.names or header.file_type == FileType.TOA5:
+                continue
+            csci_dtype = header.csci_dtypes[header.names.index(col)]
+            if csci_dtype in {"NSEC", "SECNANO"}:
+                df[col] = '"' + (
+                    pd.to_datetime(df[col], unit='ns')
                     .dt.strftime(r'%Y-%m-%d %H:%M:%S.%f')
                     .str.rstrip("0")
                     .str.rstrip(".")
                 ) + '"'
+            elif pd.api.types.is_string_dtype(df[col]) or csci_dtype in {"ASCII", "BOOL8"}:
+                df[col] = df[col].apply(lambda x: '"' + str(x).replace('"', '""') + '"' if x != "" else '"NAN"')
+            elif csci_dtype == "FP2":
+                df[col] = df[col].apply(lambda x: f"{x:.4g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
+            elif csci_dtype in {"IEEE4", "IEEE4B"}:
+                df[col] = df[col].apply(lambda x: f"{x:.8g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
+            elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
+                df[col] = df[col].apply(lambda x: f"{x:.16g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
+            elif csci_dtype == "UINT2":
+                df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999).astype(str).str.replace("-9999", '"NAN"')
+            elif csci_dtype in {"BOOL", "BOOL2", "BOOL4"}:
+                df[col] = df[col].apply(lambda x: "-1" if x else "0")
+        
+        if header.file_type == FileType.TOB1:
+            df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
 
-            for col in df:
-                if col not in header.names or header.file_type == FileType.TOA5:
-                    continue
-                csci_dtype = header.csci_dtypes[header.names.index(col)]
-                if csci_dtype in {"NSEC", "SECNANO"}:
-                    df[col] = '"' + (
-                        pd.to_datetime(df[col], unit='ns')
-                        .dt.strftime(r'%Y-%m-%d %H:%M:%S.%f')
-                        .str.rstrip("0")
-                        .str.rstrip(".")
-                    ) + '"'
-                elif pd.api.types.is_string_dtype(df[col]) or csci_dtype in {"ASCII", "BOOL8"}:
-                    df[col] = df[col].apply(lambda x: '"' + str(x).replace('"', '""') + '"' if x != "" else '"NAN"')
-                elif csci_dtype == "FP2":
-                    df[col] = df[col].apply(lambda x: f"{x:.4g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
-                elif csci_dtype in {"IEEE4", "IEEE4B"}:
-                    df[col] = df[col].apply(lambda x: f"{x:.8g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
-                elif csci_dtype in {"IEEE8", "IEEE8B", "FP4"}:
-                    df[col] = df[col].apply(lambda x: f"{x:.16g}" if pd.notna(x) else '"NAN"').str.replace("e", "E")
-                elif csci_dtype == "UINT2":
-                    df[col] = df[col].astype("int32").where(df[col] < UINT2_NAN, -9999).astype(str).str.replace("-9999", '"NAN"')
-                elif csci_dtype in {"BOOL", "BOOL2", "BOOL4"}:
-                    df[col] = df[col].apply(lambda x: "-1" if x else "0")
-            
-            if header.file_type == FileType.TOB1:
-                df.drop(columns=["SECONDS", "NANOSECONDS"], inplace=True, errors='ignore')
-
-            for row in df.iterrows():
-                output_buffer.write(",".join(str(x) for x in row[1].values) + "\n")
+        for row in df.iterrows():
+            output_buffer.write(",".join(str(x) for x in row[1].values) + "\n")
 
     log = get_global_log()
     log(f"Wrote TOA5 file {output_path.relative_to(output_path.parent.parent.parent)} with {df.shape[0]} records and {df.shape[1]} fields.")

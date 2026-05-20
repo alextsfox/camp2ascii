@@ -1,11 +1,12 @@
 # 1.1.0
 * Thank you to Stephen Chan for reporting some more bugs!
 * Updated the usage statement in the README
+* Float values are now truncated to the appropriate number of decimal places when writing ASCII files to save on space (FP2 now uses <=4 sig figs, IEEE4 uses <=6 sig figs, and IEEE8 uses <=16 sig figs).
 * Enabled options to hide the TIMESTAMP and RECORD fields in the output files
-* Added additional output options (cvs, toa5, feather, parquet, or pandas)
-* TOA5 output now more strictly adheres to the TOA5 file format, but is slower as a result.
+* Added additional output options (cvs, toa5, feather, parquet, or pandas), plus tests for these options
+* TOA5 output now more strictly adheres to the TOA5 file format, but is slightly slower as a result.
 * camp2ascii now returns an Iterator over either a list of files or pandas dataframes instead of just a list of files.
-* Errors caused by corrupt files are now handled by printing an error message and skipping the file, rather than crashing.
+* Errors caused by corrupt files are now handled by printing an error message and skipping the file.
 
 # 1.0.2
 * Fixed a bug where the progress bar was miscounting the number of bytes processed.

@@ -245,6 +245,7 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
                 match cfg.output_format:
                     case OutputFormat.TOA5:
                         suffix = ".dat"
+                        prefix = "TOA5_"
                     case OutputFormat.CSV:
                         suffix = ".csv"
                     case OutputFormat.FEATHER:
