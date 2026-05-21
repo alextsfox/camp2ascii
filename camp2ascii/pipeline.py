@@ -272,11 +272,15 @@ def execute_config(cfg: Config) -> Iterator[Path] | Iterator[pd.DataFrame]:
                         write_parquet_file(df, header, out_path, cfg.store_timestamp, cfg.store_record_numbers)
                     case _:
                         raise ValueError(f"Unsupported output format: {cfg.output_format}")
-                    
+                     
                 yield out_path
 
             # output format is pandas
             else:
+                if not cfg.store_timestamp:
+                    df.drop(columns="TIMESTAMP", inplace=True, errors='ignore')
+                if not cfg.store_record_numbers:
+                    df.drop(columns="RECORD", inplace=True, errors='ignore')
                 yield df
     finally:
         if log_file_buffer is not None:

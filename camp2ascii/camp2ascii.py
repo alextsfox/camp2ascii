@@ -70,8 +70,8 @@ def camp2ascii(
     ----------
     input_files : str | Path | list[str | Path]
         Path(s) to input TOB file, directory, or glob pattern.
-    output_dir : str | Path
-        Path to output directory.
+    output_dir : str | Path | None
+        Path to output directory. If the directory does not exist, it will be created. Must be provided, even if output_format=4 (Pandas DataFrames), since this is where log files will be written.
     n_invalid : int, optional
         Stop after encountering N invalid data frames. Default is 0 (never stop).
         If many of your input files are only partially filled with usable data, setting this to a low number (e.g. 10) can speed up processing.

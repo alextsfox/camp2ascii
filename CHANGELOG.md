@@ -1,3 +1,8 @@
+# 1.2.0
+* Update outdated version number in the `__init__.py` file
+* Improved documentation: better readme and a set of examples
+* Minor API fixes
+
 # 1.1.1
 * Update readme
 
